@@ -59,3 +59,28 @@ class AgentState:
         self.position_history: List[Tuple[float, float]] = [initial_position] # track position history 
 
         self.current_timestamp: int = 0
+
+    def update_from_gcbba(self, assigned_tasks: List[Dict], current_timestamp: int):
+        """
+        Update agent state based on GCBBA task assignments
+        - assigned_tasks: List of task dicts assigned to this agent by GCBBA
+        - current_timestamp: Current simulation timestamp for timing info
+        """
+        self.current_timestamp = current_timestamp
+
+        new_planned_tasks = []
+        for task in assigned_tasks:
+            task_info = TaskExecutionInfo(
+                task_id=task['task_id'],
+                induct_pos=tuple(task['induct_pos']),
+                eject_pos=tuple(task['eject_pos']),
+                state=TaskState.PLANNED,
+                assigned_time=current_timestamp
+            )
+            new_planned_tasks.append(task_info)
+
+        self.planned_tasks = new_planned_tasks
+
+        if self.is_idle and len(self.planned_tasks) > 0:
+            self.is_idle = False
+    
