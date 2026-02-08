@@ -26,3 +26,36 @@ class TaskExecutionInfo:
     assigned_time: Optional[float] = None
     start_time: Optional[float] = None
     completion_time: Optional[float] = None
+
+class AgentState:
+    """
+    Class to manage executin state of single agent
+
+    GCBBA_Agent: Handles bidding, consensus, and task assignment logic
+    AgentState: Handles actual execution state of assigned tasks
+     - Tracks task lifecycle: planned -> executing -> completed
+     - Stores path and timing info for each task
+     - Provides methods to update execution state and retrieve current task info
+    """
+
+    def __init__(self, agent_id: int, initial_position: Tuple[float, float], speed: float):
+        self.agent_id = agent_id
+        self.pos = np.array(initial_position, dtype=np.float32)
+        self.speed = speed
+
+        # Task Lifecycle Management
+        self.planned_tasks: List[TaskExecutionInfo] = []
+        self.current_task: Optional[TaskExecutionInfo] = None
+        self.completed_tasks: List[TaskExecutionInfo] = []
+
+        # Path Tracking
+        self.current_path: Optional[List[Tuple[int, int, int]]] = None
+        self.current_path_index: int = 0
+
+        # state tracking
+        self.is_idle = True
+        self.is_stuck = False # flag to indicate if agent is stuck (e.g. due to collision or path blockage)
+
+        self.position_history: List[Tuple[float, float]] = [initial_position] # track position history 
+
+        self.current_timestamp: int = 0
