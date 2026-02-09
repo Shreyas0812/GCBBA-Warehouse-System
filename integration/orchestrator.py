@@ -1,9 +1,14 @@
 import os
-from typing import Tuple
+from typing import Optional, Tuple
 import yaml
+import networkx as nx
+import numpy as np
 
 from collision_avoidance.grid_map import GridMap
 from collision_avoidance.time_based_collision_avoidance import TimeBasedCollisionAvoidance
+
+from gcbba import GCBBA_Orchestrator
+from gcbba.tools_warehouse import agent_init, create_graph_with_range, task_init
 
 class IntegrationOrchestrator:
     """
@@ -25,6 +30,7 @@ class IntegrationOrchestrator:
                  stuck_threshold: int = 5,
                  prediction_horizon: int = 5,
                  max_plan_time: int = 400,
+                 Lt: Optional[int] = None
                  ) -> None:
         self.config_path = config_path
         self.tasks_per_induct_station = tasks_per_induct_station
@@ -34,11 +40,13 @@ class IntegrationOrchestrator:
         self.stuck_threshold = stuck_threshold
         self.prediction_horizon = prediction_horizon
         self.max_plan_time = max_plan_time
+        self.Lt = Lt
 
         self.grid_map = GridMap(config_path)
         self.ca = TimeBasedCollisionAvoidance(self.grid_map)
 
         self._load_config()
+        self._init_gcbba()
 
     def _load_config(self) -> None:
         with open(self.config_path, 'r') as f:
@@ -58,8 +66,26 @@ class IntegrationOrchestrator:
         self.eject_positions = [(eject_pos_flat[i], eject_pos_flat[i+1], eject_pos_flat[i+2], eject_pos_flat[i+3]) 
                                 for i in range(0, len(eject_pos_flat), 4)]
 
+    def _init_gcbba(self) -> None:
+        raw_graph, G = create_graph_with_range(self.agent_positions, self.comm_range)
+        if raw_graph.number_of_nodes() == 0:
+            D = 1
+        else:
+            if nx.is_connected(raw_graph):
+                D = nx.diameter(raw_graph)
+            else:
+                # If the graph is not fully connected, we can take the maximum diameter of the connected components as an approximation
+                D = max(nx.diameter(raw_graph.subgraph(c)) for c in nx.connected_components(raw_graph))
 
+        agents = agent_init(self.agent_positions, sp_lim=self.sp_lim)
+        tasks = task_init(self.induct_positions, self.eject_positions, task_per_induct_station=self.tasks_per_induct_station)
+
+        if Lt is None:
+            nt = len(self.induct_positions) * self.tasks_per_induct_station
+            na = len(self.agent_positions)
+            Lt = int(np.ceil(nt / na))
         
+        self.gcbba_orchestrator = GCBBA_Orchestrator(G, D, tasks, agents, Lt)
 
 if __name__ == "__main__":
     PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
