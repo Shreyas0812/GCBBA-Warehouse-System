@@ -166,3 +166,25 @@ class AgentState:
             return predicted_pos
         else:
             return self.current_path[-1]
+        
+    def get_current_goal(self) -> Optional[Tuple[float, float, float]]:
+        """
+        Get the current goal position of the executing task
+        """
+        if self.current_task is not None:
+            # Goal at induct position during planned state
+            return self.current_task.induct_pos
+        elif len(self.planned_tasks) > 0:
+            # next goal is the induct position of the first planned task
+            return self.planned_tasks[0].induct_pos
+        else:
+            return None
+        
+    def get_next_task_goal(self) -> Optional[Tuple[float, float, float]]:
+        """
+        Get the next task's goal position after the current task
+        """
+        if len(self.planned_tasks) > 0:
+            return self.planned_tasks[0].induct_pos
+        else:
+            return None
