@@ -235,6 +235,29 @@ class AgentState:
         else:
             return None
     
+    def detect_stuck(self, stuck_threshold: int = 5) -> bool:
+        """
+        Detect if the agent is stuck based on lack of position change over time
+        - stuck_threshold: Number of timesteps with no movement to consider as stuck
+        """
+        if self.is_idle:
+            self.is_stuck = False
+            return False
+        
+        if len(self.position_history) < stuck_threshold:
+            self.is_stuck = False
+            return False
+        
+        recent_positions = self.position_history[-stuck_threshold:]
+        first_pos = recent_positions[0][:3]
+        
+        for pos in recent_positions[1:]:
+            if pos[:3] != first_pos:
+                return False
+        
+        self.is_stuck = True
+        return True
+    
     def has_tasks(self) -> bool:
         """
         Check if the agent has any tasks (planned or executing)
