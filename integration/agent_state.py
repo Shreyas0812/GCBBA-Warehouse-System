@@ -51,12 +51,14 @@ class AgentState:
         # Path Tracking
         self.current_path: Optional[List[Tuple[int, int, int]]] = None
         self.current_path_index: int = 0
+        self.task_phase: str = "to_induct" # or "to_eject" to track which part of the task is being executed
 
         # state tracking
         self.is_idle = True
         self.is_stuck = False # flag to indicate if agent is stuck (e.g. due to collision or path blockage)
+        self.needs_new_path = False # Used by orchestrator to know when to call path planner for this agent
 
-        self.position_history: List[Tuple[float, float, float]] = [initial_position] # track position history 
+        self.position_history: List[Tuple[float, float, float, int]] = [(initial_position[0], initial_position[1], initial_position[2], 0)] # track position history 
 
         self.current_timestep: int = 0
 
@@ -87,12 +89,18 @@ class AgentState:
     def assign_path(self, path: List[Tuple[int, int, int]]):
         """
         Set the current path for the agent to execute the current task
+
+        If no current task is executing, promotes the first planned task to executing.
+        Sets start_time on the task when it first begins executing.
+        Clears the needs_new_path flag since a path has been provided.
         """
 
         if self.current_task is None and len(self.planned_tasks) > 0:
             # Start executing the first planned task
             self.current_task = self.planned_tasks.pop(0)
             self.current_task.state = TaskState.EXECUTING
+            self.current_task.start_time = self.current_timestep
+            self.task_phase = "to_induct" 
 
         if self.current_task is not None:
             # Update the current task with the new path and reset path index
@@ -102,11 +110,20 @@ class AgentState:
             # Update the agent's current path and reset path index for execution
             self.current_path = path
             self.current_path_index = 0
+            self.needs_new_path = False
 
     def step(self, timestep:int) -> bool:
         """
         Execute one step of the agent's current task based on the assigned path
+
+        Handles two-phase task execution:
+            - to_induct phase: agent follows path to induct station.
+              On arrival, flips to to_eject and sets needs_new_path = True.
+            - to_eject phase: agent follows path to eject station.
+              On arrival, completes the task.
         """
+
+        self.current_timestep = timestep
 
         if self.current_path is None or len(self.current_path) == 0:
             self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
@@ -118,10 +135,23 @@ class AgentState:
             self.pos = np.array(next_pos, dtype=np.float32)
             self.current_path_index += 1
 
+            if self.current_task is not None:
+                self.current_task.current_path_index = self.current_path_index
+                
             self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
 
+            # Reached end of the current path
             if self.current_path_index >= len(self.current_path):
-                return self._complete_current_task(timestep)
+                if self.task_phase == "to_induct":
+                    # Arrived at induct station, now need path to eject station
+                    self.task_phase = "to_eject"
+                    self.current_path = None
+                    self.current_path_index = 0
+                    self.needs_new_path = True
+                    return False
+                elif self.task_phase == "to_eject":
+                    # Arrived at eject station, task is complete
+                    return self._complete_current_task(timestep)
         
         return False
 
@@ -140,10 +170,13 @@ class AgentState:
             self.current_task = None
             self.current_path = None
             self.current_path_index = 0
+            self.task_phase = "to_induct"
+            self.needs_new_path = False
 
             # Check if there are more planned tasks to execute
             if len(self.planned_tasks) > 0:
                 self.is_idle = False
+                self.needs_new_path = True 
             else:
                 self.is_idle = True
 
@@ -151,32 +184,45 @@ class AgentState:
         
         return False
     
-    def get_predicted_position(self, steps_ahead: int = 5) -> Tuple[float, float, float]:
+    def get_position(self) -> Tuple[int, int, int]:
+        """
+        Get the current position of the agent
+        """
+        if self.current_path is not None and self.current_path_index > 0:
+            # Return the last position on the path that the agent has reached
+            return self.current_path[self.current_path_index - 1]
+        return (int(self.pos[0]), int(self.pos[1]), int(self.pos[2]))
+    
+    def get_predicted_position(self, steps_ahead: int = 5) -> Tuple[int, int, int]:
         """
         Predict the agent's future position based on current path and speed
         - steps_ahead: Number of steps to predict into the future
         """ 
         if self.current_path is None or len(self.current_path) == 0:
-            return (self.pos[0], self.pos[1], self.pos[2])
+            return (int(self.pos[0]), int(self.pos[1]), int(self.pos[2]))
         
         predicted_idx = min(self.current_path_index + steps_ahead, len(self.current_path) - 1)
 
-        if predicted_idx < len(self.current_path):
-            predicted_pos = self.current_path[predicted_idx]
-            return predicted_pos
-        else:
-            return self.current_path[-1]
+        return self.current_path[predicted_idx]
         
     def get_current_goal(self) -> Optional[Tuple[float, float, float]]:
         """
         Get the current goal position of the executing task
+
+        - If executing to_induct: returns induct position
+        - If executing to_eject: returns eject position
+        - If idle with planned tasks: returns first planned task's induct position
+        - If idle with no tasks: returns None
         """
         if self.current_task is not None:
-            # Goal at induct position during planned state
-            return self.current_task.induct_pos
+            if self.task_phase == "to_induct":
+                return self.current_task.induct_pos
+            elif self.task_phase == "to_eject":
+                return self.current_task.eject_pos
+
         elif len(self.planned_tasks) > 0:
-            # next goal is the induct position of the first planned task
             return self.planned_tasks[0].induct_pos
+        
         else:
             return None
         
@@ -188,7 +234,7 @@ class AgentState:
             return self.planned_tasks[0].induct_pos
         else:
             return None
-        
+    
     def has_tasks(self) -> bool:
         """
         Check if the agent has any tasks (planned or executing)
@@ -198,15 +244,14 @@ class AgentState:
     def get_status_summary(self) -> Dict:
         """
         Get summary of agent's current state for debugging/logging.
-        
-        Returns:
-            dict with status information
         """
         return {
             'agent_id': self.agent_id,
             'position': tuple(self.pos),
             'is_idle': self.is_idle,
             'is_stuck': self.is_stuck,
+            'task_phase': self.task_phase,
+            'needs_new_path': self.needs_new_path,
             'current_task': self.current_task.task_id if self.current_task else None,
             'num_planned': len(self.planned_tasks),
             'num_completed': len(self.completed_tasks),
@@ -215,6 +260,6 @@ class AgentState:
         }
     
     def __repr__(self):
-        status = "IDLE" if self.is_idle else "BUSY"
+        status = "IDLE" if self.is_idle else f"BUSY({self.task_phase})"
         task_info = f"task={self.current_task.task_id}" if self.current_task else "no task"
         return f"Agent{self.agent_id}@{tuple(self.pos)} [{status}] {task_info}"
