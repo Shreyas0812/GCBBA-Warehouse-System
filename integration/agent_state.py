@@ -6,7 +6,7 @@ task lifecycle: planned -> executing -> completed
 """
 
 import numpy as np
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Iterable
 from enum import Enum
 from dataclasses import dataclass
 
@@ -18,8 +18,8 @@ class TaskState(Enum):
 @dataclass
 class TaskExecutionInfo:
     task_id: int
-    induct_pos: Tuple[float, float]
-    eject_pos: Tuple[float, float]
+    induct_pos: Tuple[int, int, int]
+    eject_pos: Tuple[int, int, int]
     state: TaskState
     path: Optional[List[Tuple[int, int, int]]] = None
     current_path_index: int = 0
@@ -38,9 +38,9 @@ class AgentState:
      - Provides methods to update execution state and retrieve current task info
     """
 
-    def __init__(self, agent_id: int, initial_position: Tuple[float, float, float], speed: float):
+    def __init__(self, agent_id: int, initial_position: Tuple[int, int, int], speed: float = 1.0):
         self.agent_id = agent_id
-        self.pos = np.array(initial_position, dtype=np.float32)
+        self.pos = np.array(initial_position, dtype=np.int32)
         self.speed = speed
 
         # Task Lifecycle Management
@@ -58,7 +58,9 @@ class AgentState:
         self.is_stuck = False # flag to indicate if agent is stuck (e.g. due to collision or path blockage)
         self.needs_new_path = False # Used by orchestrator to know when to call path planner for this agent
 
-        self.position_history: List[Tuple[float, float, float, int]] = [(initial_position[0], initial_position[1], initial_position[2], 0)] # track position history 
+        self.position_history: List[Tuple[int, int, int, int]] = [
+            (initial_position[0], initial_position[1], initial_position[2], 0)
+        ]
 
         self.current_timestep: int = 0
 
@@ -74,8 +76,8 @@ class AgentState:
         for task in assigned_tasks:
             task_info = TaskExecutionInfo(
                 task_id=task['task_id'],
-                induct_pos=tuple(task['induct_pos']),
-                eject_pos=tuple(task['eject_pos']),
+                induct_pos=self._to_grid_pos(task['induct_pos']),
+                eject_pos=self._to_grid_pos(task['eject_pos']),
                 state=TaskState.PLANNED,
                 assigned_time=current_timestep
             )
@@ -132,7 +134,7 @@ class AgentState:
         # If the agent is currently executing a task, move along the assigned path
         if self.current_path_index < len(self.current_path):
             next_pos = self.current_path[self.current_path_index]
-            self.pos = np.array(next_pos, dtype=np.float32)
+            self.pos = np.array(next_pos, dtype=np.int32)
             self.current_path_index += 1
 
             if self.current_task is not None:
@@ -205,7 +207,7 @@ class AgentState:
 
         return self.current_path[predicted_idx]
         
-    def get_current_goal(self) -> Optional[Tuple[float, float, float]]:
+    def get_current_goal(self) -> Optional[Tuple[int, int, int]]:
         """
         Get the current goal position of the executing task
 
@@ -226,7 +228,7 @@ class AgentState:
         else:
             return None
         
-    def get_next_task_goal(self) -> Optional[Tuple[float, float, float]]:
+    def get_next_task_goal(self) -> Optional[Tuple[int, int, int]]:
         """
         Get the next task's goal position after the current task
         """
@@ -270,7 +272,7 @@ class AgentState:
         """
         return {
             'agent_id': self.agent_id,
-            'position': tuple(self.pos),
+            'position': (int(self.pos[0]), int(self.pos[1]), int(self.pos[2])),
             'is_idle': self.is_idle,
             'is_stuck': self.is_stuck,
             'task_phase': self.task_phase,
@@ -286,3 +288,9 @@ class AgentState:
         status = "IDLE" if self.is_idle else f"BUSY({self.task_phase})"
         task_info = f"task={self.current_task.task_id}" if self.current_task else "no task"
         return f"Agent{self.agent_id}@{tuple(self.pos)} [{status}] {task_info}"
+
+    def _to_grid_pos(self, pos: Iterable) -> Tuple[int, int, int]:
+        pos_list = list(pos)
+        if len(pos_list) != 3:
+            raise ValueError(f"Expected 3D position, got {len(pos_list)} values")
+        return (int(pos_list[0]), int(pos_list[1]), int(pos_list[2]))
