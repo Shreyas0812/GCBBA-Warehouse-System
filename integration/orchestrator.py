@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Set, Tuple, List
+from typing import Optional, Set, Tuple, List, Dict
 import yaml
 import networkx as nx
 import numpy as np
@@ -136,7 +136,35 @@ class IntegrationOrchestrator:
 
     def run_gcbba(self) -> None:
         assignment, total_score, makespan = self.gcbba_orchestrator.launch_agents()
-        print(f"GCBBA - total score: {total_score}; makespan: {makespan}; assignment: {assignment}")
+
+        self.latest_assignment = assignment
+        gcbba_assignments = self._build_assignment_dict(assignment)
+
+    def _build_assignment_dict(self, assignment: List[List[int]]) -> Dict[int, List[int]]:
+        task_map = {task.id: task for task in self.gcbba_orchestrator.tasks}
+        assignments_dict: Dict[int, List[int]] = {}
+
+        for agent_idx, task_ids in enumerate(assignment):
+            tasks_for_agent: List[Dict] = []
+            for task_id in task_ids:
+                if task_id in self.completed_task_ids:
+                    continue  # Skip already completed tasks
+                task = task_map.get(task_id)
+                if task is None:
+                    continue  # Skip if task ID is not found (should not happen)
+
+                induct_grid_pos = self.grid_map.continuous_to_grid(task.induct_pos[0], task.induct_pos[1], task.induct_pos[2])
+                eject_grid_pos = self.grid_map.continuous_to_grid(task.eject_pos[0], task.eject_pos[1], task.eject_pos[2])
+
+                tasks_for_agent.append({
+                    "task_id": int(task_id),
+                    "induct_grid_pos": list(induct_grid_pos),
+                    "eject_grid_pos": list(eject_grid_pos)
+                })        
+            
+            assignments_dict[agent_idx] = tasks_for_agent
+        
+        return assignments_dict
 
 if __name__ == "__main__":
     PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
