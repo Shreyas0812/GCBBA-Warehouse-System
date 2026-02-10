@@ -3,6 +3,8 @@ from typing import Optional, Tuple, List
 import yaml
 import networkx as nx
 import numpy as np
+import time
+from tqdm import tqdm
 
 from collision_avoidance.grid_map import GridMap
 from collision_avoidance.time_based_collision_avoidance import TimeBasedCollisionAvoidance
@@ -98,8 +100,24 @@ class IntegrationOrchestrator:
             grid_pos = self.grid_map.continuous_to_grid(float(gcbba_agent.pos[0]), float(gcbba_agent.pos[1]), float(gcbba_agent.pos[2]))
             self.agent_states.append(AgentState(agent_id=gcbba_agent.id, initial_position=grid_pos, speed=gcbba_agent.speed))
 
+    def run_simulation(self, timesteps: int = 100) -> None:
+        for t in tqdm(range(timesteps), desc="Simulation Progress"):
+            print(f"--- Timestep {t} ---")
+            # 1. Get current task assignments from GCBBA
+            # 2. Update AgentState with new assignments
+            # 3. Call collision avoidance for path planning/replanning
+            # 4. Step simulation forward and update AgentState with new positions and task statuses
+            # 5. Trigger GCBBA replanning at specified intervals or when certain conditions are met (e.g. task completion, new tasks added, etc.)
+            pass  # Placeholder for main simulation loop logic
+
 if __name__ == "__main__":
     PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
     config_path = os.path.join(PROJECT_ROOT, "..", "config", "gridworld_warehouse_small.yaml")
 
     orchestrator = IntegrationOrchestrator(config_path)
+
+    t0 = time.time()
+    orchestrator.run_simulation()
+    tf = time.time()
+
+    print(f"Simulation completed in {tf - t0} seconds.")
