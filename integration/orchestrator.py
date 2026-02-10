@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Tuple, List
+from typing import Optional, Set, Tuple, List
 import yaml
 import networkx as nx
 import numpy as np
@@ -61,6 +61,13 @@ class IntegrationOrchestrator:
         self._init_gcbba(agent_positions, induct_positions, eject_positions)
         self._init_agent_states()
 
+        # Simulation state variables
+        self.current_timestep = 0
+        self.last_gcbba_timestep = -self.rerun_interval  # Initialize to allow GCBBA to run at timestep 0
+        self.completed_task_ids: Set[int] = set()
+
+        self.latest_assignment: List[List[int]] = []  # Store latest GCBBA assignment for reference in stepping logic
+
     def _load_config(self, config_path: str) -> Tuple[List, List, List]:
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
@@ -109,7 +116,8 @@ class IntegrationOrchestrator:
             self.agent_states.append(AgentState(agent_id=gcbba_agent.id, initial_position=grid_pos, speed=gcbba_agent.speed))
 
     def run_simulation(self, timesteps: int = 100) -> None:
-        for _ in tqdm(range(timesteps), desc="Simulation Progress"):
+        # for _ in tqdm(range(timesteps), desc="Simulation Progress"):
+        for _ in range(timesteps):
             self.step()
             # Main simulation loop logic:
             # 1. Get current task assignments from GCBBA
@@ -117,15 +125,18 @@ class IntegrationOrchestrator:
             # 3. Call collision avoidance for path planning/replanning
             # 4. Step simulation forward and update AgentState with new positions and task statuses
             # 5. Trigger GCBBA replanning at specified intervals or when certain conditions are met (e.g. task completion, new tasks added, rerun time etc.)
-            pass  # Placeholder for main simulation loop logic
+            break
     
-    def step(self) -> None:
+    def step(self) -> OrchestratorEvents:
         """
         Step the simulation forward by one timestep.
         """
-        # Placeholder for stepping logic
-        print("Stepping simulation forward by one timestep.")
-        pass
+        if self.current_timestep == 0 or self.last_gcbba_timestep < 0:
+            self.run_gcbba()
+
+    def run_gcbba(self) -> None:
+        assignment, total_score, makespan = self.gcbba_orchestrator.launch_agents()
+        print(f"GCBBA - total score: {total_score}; makespan: {makespan}; assignment: {assignment}")
 
 if __name__ == "__main__":
     PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
