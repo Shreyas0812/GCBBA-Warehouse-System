@@ -140,6 +140,15 @@ class IntegrationOrchestrator:
         self.latest_assignment = assignment
         gcbba_assignments = self._build_assignment_dict(assignment)
 
+        for agent_idx, agent_state in enumerate(self.agent_states):
+            tasks_for_agent = gcbba_assignments.get(agent_idx, [])
+            agent_state.update_from_gcbba(tasks_for_agent, self.current_timestep)
+            if agent_state.has_tasks() and agent_state.current_path is None:
+                agent_state.needs_new_path = True
+        
+        self.last_gcbba_timestep = self.current_timestep
+
+
     def _build_assignment_dict(self, assignment: List[List[int]]) -> Dict[int, List[int]]:
         task_map = {task.id: task for task in self.gcbba_orchestrator.tasks}
         assignments_dict: Dict[int, List[int]] = {}
@@ -158,8 +167,8 @@ class IntegrationOrchestrator:
 
                 tasks_for_agent.append({
                     "task_id": int(task_id),
-                    "induct_grid_pos": list(induct_grid_pos),
-                    "eject_grid_pos": list(eject_grid_pos)
+                    "induct_pos": list(induct_grid_pos), # induct_grid_pos is a tuple, convert to list for easier handling in AgentState
+                    "eject_pos": list(eject_grid_pos)   # eject_grid_pos
                 })        
             
             assignments_dict[agent_idx] = tasks_for_agent
