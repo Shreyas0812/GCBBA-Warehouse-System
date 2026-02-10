@@ -136,6 +136,25 @@ class IntegrationOrchestrator:
 
         self._plan_paths()
 
+        completed_task_ids: List[int] = []
+        for agent_state in self.agent_states:
+            completed = agent_state.step(self.current_timestep)
+
+            if completed and agent_state.completed_tasks:
+                completed_task_ids.append(agent_state.completed_tasks[-1].task_id)
+
+        for task_id in completed_task_ids:
+            self.completed_task_ids.add(task_id)
+
+        # Check if we need to rerun GCBBA
+        events = self._detect_events(completed_task_ids)
+
+        if events.gcbba_rerun:
+            self.run_gcbba()
+        
+        self.current_timestep += 1
+        return events
+
     def run_gcbba(self) -> None:
         assignment, total_score, makespan = self.gcbba_orchestrator.launch_agents()
 
@@ -204,6 +223,24 @@ class IntegrationOrchestrator:
             
             agent_state.assign_path(path)
             self.ca.reserve_path(path, agent_state.agent_id)
+
+    def _detect_events(self, completed_task_ids: List[int]) -> OrchestratorEvents:
+        stuck_agent_ids: List[int] = []
+
+        for agent_state in self.agent_states:
+            if agent_state.detect_stuck(self.stuck_threshold):
+                stuck_agent_ids.append(agent_state.agent_id)
+                agent_state.needs_new_path = True  # Trigger replanning for stuck agents
+
+        gcbba_rerun = False
+        if completed_task_ids or stuck_agent_ids:
+            gcbba_rerun = True  # Trigger GCBBA rerun if any tasks completed or agents stuck
+
+        return OrchestratorEvents(
+            completed_task_ids=completed_task_ids,
+            stuck_agent_ids=stuck_agent_ids,
+            gcbba_rerun=gcbba_rerun
+        )
 
 if __name__ == "__main__":
     PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
