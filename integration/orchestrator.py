@@ -109,6 +109,11 @@ class IntegrationOrchestrator:
         else:
             Lt = self.Lt
 
+        self.all_char_t: Dict[int, np.ndarray] = {i: tasks[i] for i in range(len(tasks))}
+        self.all_task_ids: Set[int] = set(self.all_char_t.keys())
+        self.all_char_a = agents   # List[np.array], indexed by agent index
+        self.num_agents = len(agents)
+
         self.gcbba_orchestrator = GCBBA_Orchestrator(G, D, tasks, agents, Lt)
 
     def _init_agent_states(self) -> None:
@@ -128,7 +133,7 @@ class IntegrationOrchestrator:
             # 4. Step simulation forward and update AgentState with new positions and task statuses
             # 5. Trigger GCBBA replanning at specified intervals or when certain conditions are met (e.g. task completion, new tasks added, rerun time etc.)
             
-            if len(self.completed_task_ids) == len(self.gcbba_orchestrator.tasks):
+            if self.completed_task_ids == self.all_task_ids:
                 print(f"All tasks completed at timestep {self.current_timestep}. Ending simulation.")
                 break
     
@@ -161,22 +166,78 @@ class IntegrationOrchestrator:
         return events
 
     def run_gcbba(self) -> None:
-        # clearing previous GCBBA state to ensure fresh planning based on current agent positions and completed tasks
-        self.gcbba_orchestrator.initialize_all()
-        self.gcbba_orchestrator.assig_history = []
-        self.gcbba_orchestrator.bid_history = []
-        self.gcbba_orchestrator.max_times = []
-        self.gcbba_orchestrator.cvg_iter = self.gcbba_orchestrator.nt
+        
+        # Tasks to Exclude: completed tasks + currently executing tasks (to avoid reassigning them)
+        executing_task_ids = self._get_executing_task_ids()
+        excluded_task_ids = self.completed_task_ids | executing_task_ids
 
-        if self.current_timestep > 0:
-            for i, agent_state in enumerate(self.agent_states):
+        active_char_t = []
+        active_task_ids = []
+
+        for original_id in sorted(self.all_task_ids):
+            if original_id not in excluded_task_ids:
+                active_char_t.append(self.all_char_t[original_id])
+                active_task_ids.append(original_id)
+        
+        if len(active_char_t) == 0:
+            # Nothing to allocate - updating agent states with empty lists
+            for agent_state in self.agent_states:
+                agent_state.update_from_gcbba([], self.current_timestep)
+            self.latest_assignment = [[] for _ in range(self.num_agents)]
+            self.last_gcbba_timestep = self.current_timestep
+            print(f"No active tasks to allocate at timestep {self.current_timestep}. Skipping GCBBA run.")
+            return
+        
+        # Build updated char_a for agents based on their current positions and speeds
+        updated_char_a = []
+        for i, agent_state in enumerate(self.agent_states):
+            if self.current_timestep > 0:
                 predicted_pos = agent_state.get_predicted_position(self.prediction_horizon)
                 continuous_pos = self.grid_map.grid_to_continuous(*predicted_pos)
-                self.gcbba_orchestrator.agents[i].pos = continuous_pos
+            else:
+                continuous_pos = (self.all_char_a[i][0], self.all_char_a[i][1], self.all_char_a[i][2])  # Initial position from config
+            
+            speed = float(self.all_char_a[i][3])  # Speed from config
+            agent_id_value = int(self.all_char_a[i][4])  # Agent ID from config
 
-        assignment, total_score, makespan = self.gcbba_orchestrator.launch_agents()
+            updated_char_a.append(np.array([continuous_pos[0], continuous_pos[1], continuous_pos[2], speed, agent_id_value]))
 
+        # Recomputing G and D based on updated agent positions
+        current_positions = []
+        for i, agent_state in enumerate(self.agent_states):
+            pos = agent_state.get_position()
+            continuous_pos = self.grid_map.grid_to_continuous(*pos)
+            current_positions.append((continuous_pos[0], continuous_pos[1], continuous_pos[2], agent_state.agent_id))
+        
+        raw_graph, G = create_graph_with_range(current_positions, self.comm_range)
+        if raw_graph.number_of_nodes() == 0:
+            D = 1
+        else:
+            if nx.is_connected(raw_graph):
+                D = nx.diameter(raw_graph)
+            else:
+                # If the graph is not fully connected, we can take the maximum diameter of the connected components as an approximation
+                D = max(nx.diameter(raw_graph.subgraph(c)) for c in nx.connected_components(raw_graph))
+
+        # Computing Capacity 
+        na = self.num_agents
+        nt_active = len(active_char_t)
+        if self.Lt is None:
+            Lt = int(np.ceil(nt_active / na))
+        else:
+            Lt = self.Lt
+        
+        # Fresh GCBBBA Orchestrator instance with updated parameters and state
+        gcbba_orch = GCBBA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids)
+        assignment, total_score, makespan = gcbba_orch.launch_agents()
+
+        print(f"[t={self.current_timestep}] GCBBA: {nt_active} active tasks, "
+              f"{len(excluded_task_ids)} excluded ({len(self.completed_task_ids)} done, "
+              f"{len(executing_task_ids)} executing). Score={total_score:.2f}, Makespan={makespan:.2f}")
+        
         self.latest_assignment = assignment
+        
+        # Update AgentState with new assignments from GCBBA
         gcbba_assignments = self._build_assignment_dict(assignment)
 
         for agent_idx, agent_state in enumerate(self.agent_states):
@@ -187,22 +248,27 @@ class IntegrationOrchestrator:
         
         self.last_gcbba_timestep = self.current_timestep
 
+    def _get_executing_task_ids(self) -> Set[int]:
+        executing_task_ids = set()
+        for agent_state in self.agent_states:
+            if agent_state.current_task is not None:
+                executing_task_ids.add(agent_state.current_task.task_id)
+        return executing_task_ids
 
     def _build_assignment_dict(self, assignment: List[List[int]]) -> Dict[int, List[int]]:
-        task_map = {task.id: task for task in self.gcbba_orchestrator.tasks}
         assignments_dict: Dict[int, List[int]] = {}
 
         for agent_idx, task_ids in enumerate(assignment):
             tasks_for_agent: List[Dict] = []
+
             for task_id in task_ids:
                 if task_id in self.completed_task_ids:
                     continue  # Skip already completed tasks
-                task = task_map.get(task_id)
-                if task is None:
-                    continue  # Skip if task ID is not found (should not happen)
 
-                induct_grid_pos = self.grid_map.continuous_to_grid(task.induct_pos[0], task.induct_pos[1], task.induct_pos[2])
-                eject_grid_pos = self.grid_map.continuous_to_grid(task.eject_pos[0], task.eject_pos[1], task.eject_pos[2])
+                char_t = self.all_char_t[task_id]
+
+                induct_grid_pos = self.grid_map.continuous_to_grid(float(char_t[0]), float(char_t[1]), float(char_t[2]))
+                eject_grid_pos = self.grid_map.continuous_to_grid(float(char_t[3]), float(char_t[4]), float(char_t[5]))
 
                 tasks_for_agent.append({
                     "task_id": int(task_id),
