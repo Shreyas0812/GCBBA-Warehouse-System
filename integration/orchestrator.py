@@ -1,4 +1,5 @@
 import os
+import csv
 from typing import Optional, Set, Tuple, List, Dict
 import yaml
 import networkx as nx
@@ -156,6 +157,10 @@ class IntegrationOrchestrator:
         for task_id in completed_task_ids:
             self.completed_task_ids.add(task_id)
 
+        # # Log agent positions at this timestep
+        # for agent_state in self.agent_states:
+        #     print(f"  t={self.current_timestep} Agent {agent_state.agent_id} @ {tuple(agent_state.pos)}")
+
         # Check if we need to rerun GCBBA
         events = self._detect_events(completed_task_ids)
 
@@ -310,6 +315,17 @@ class IntegrationOrchestrator:
             agent_state.assign_path(path)
             self.ca.reserve_path(path, agent_state.agent_id, start_time=self.current_timestep)
 
+    def save_trajectories(self, path: str = "results/data/trajectories.csv") -> None:
+        """Export all agent position histories to a CSV file."""
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["agent_id", "x", "y", "z", "timestep"])
+            for agent_state in self.agent_states:
+                for (x, y, z, t) in agent_state.position_history:
+                    writer.writerow([agent_state.agent_id, x, y, z, t])
+        print(f"Trajectories saved to {path}")
+
     def _detect_events(self, completed_task_ids: List[int]) -> OrchestratorEvents:
         stuck_agent_ids: List[int] = []
 
@@ -343,3 +359,4 @@ if __name__ == "__main__":
     tf = time.time()
 
     print(f"Simulation completed in {tf - t0} seconds.")
+    orchestrator.save_trajectories()
