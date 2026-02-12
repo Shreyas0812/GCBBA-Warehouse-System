@@ -111,6 +111,10 @@ class AgentState:
             self.task_phase = "to_induct" 
 
         if self.current_task is not None:
+            if len(path) > 1 and tuple(path[0]) == self.get_position():
+                # If the provided path starts with the agent's current position, skip the first point
+                path = path[1:]
+
             # Update the current task with the new path and reset path index
             self.current_task.path = path
             self.current_task.current_path_index = 0
