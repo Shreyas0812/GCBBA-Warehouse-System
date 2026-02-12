@@ -144,7 +144,7 @@ class IntegrationOrchestrator:
         """
         if self.current_timestep == 0 or self.last_gcbba_timestep < 0:
             self.run_gcbba()
-        
+
         completed_task_ids: List[int] = []
         for agent_state in self.agent_states:
             completed = agent_state.step(self.current_timestep)
@@ -333,14 +333,17 @@ class IntegrationOrchestrator:
             if agent_state.detect_stuck(self.stuck_threshold):
                 stuck_agent_ids.append(agent_state.agent_id)
                 agent_state.needs_new_path = True  # Trigger replanning for stuck agents
-
+        
         gcbba_rerun = False
-        if completed_task_ids or stuck_agent_ids:
-            gcbba_rerun = True  # Trigger GCBBA rerun if any tasks completed or agents stuck
+        time_since_last_gcbba = self.current_timestep - self.last_gcbba_timestep
 
-        # Also trigger GCBBA rerun at regular intervals
-        if (self.current_timestep - self.last_gcbba_timestep) >= self.rerun_interval:
-            gcbba_rerun = True
+        # Cooldown to prevent excessive GCBBA reruns on close timestep events
+        min_cooldown = max(3, self.rerun_interval // 3)  # At least 3 timesteps cooldown or a fraction of the rerun interval
+
+        if time_since_last_gcbba >= self.rerun_interval:
+            gcbba_rerun = True  # Trigger GCBBA rerun periodically based on rerun_interval
+        elif (completed_task_ids or stuck_agent_ids) and time_since_last_gcbba >= min_cooldown:
+            gcbba_rerun = True  # Trigger GCBBA rerun if there are events and cooldown has passed
 
         return OrchestratorEvents(
             completed_task_ids=completed_task_ids,
