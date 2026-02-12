@@ -13,17 +13,24 @@ class TimeBasedCollisionAvoidance:
     def __init__(self, grid_map):
         self.grid_map = grid_map
         self.reservations = {} # {(x, y, z, t): agent_id}
+        self.goal_reservations = {} # {(x, y, z): (agent_id, start_time)}
 
     def clear_agent_reservations(self, agent_id):
         keys_to_remove = [k for k, v in self.reservations.items() if v == agent_id]
         for k in keys_to_remove:
             del self.reservations[k]
-            
+        
+        # Clear goal reservations for this agent
+        goal_keys_to_remove = [k for k, v in self.goal_reservations.items() if v[0] == agent_id]
+        for k in goal_keys_to_remove:
+            del self.goal_reservations[k]
+
     def clear_all_reservations(self):
         """
         Clears all reservations.
         """
         self.reservations = {}
+        self.goal_reservations = {}
     
     def heuristic(self, pos1, pos2):
         """
@@ -49,6 +56,14 @@ class TimeBasedCollisionAvoidance:
         key = (x, y, z, t)
         if key in self.reservations:
             return self.reservations[key] != agent_id
+        
+        # Check Goal reservations
+        pos = (x, y, z)
+        if pos in self.goal_reservations:
+            reserved_agent_id, res_start_time = self.goal_reservations[pos]
+            if reserved_agent_id != agent_id and t >= res_start_time:
+                return True
+            
         return False
     
     def has_edge_conflict(self, curr_pos, next_pos, t, agent_id):
@@ -81,9 +96,10 @@ class TimeBasedCollisionAvoidance:
         # Reserve goal position for all future timesteps 
         if path:
             goal_pos = path[-1]
-            for future_t in range(len(path) + start_time, len(path) + start_time + 1000): # Arbitrary large number to reserve goal
-                key = (*goal_pos, future_t)
-                self.reservations[key] = agent_id
+            self.goal_reservations[goal_pos] = (agent_id, start_time + len(path))
+            # for future_t in range(len(path) + start_time, len(path) + start_time + 1000): # Arbitrary large number to reserve goal
+            #     key = (*goal_pos, future_t)
+            #     self.reservations[key] = agent_id
     
     def plan_path_with_reservations(self, start, goal, agent_id, max_time=1000, start_time=0):
         """
