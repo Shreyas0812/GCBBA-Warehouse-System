@@ -144,9 +144,7 @@ class IntegrationOrchestrator:
         """
         if self.current_timestep == 0 or self.last_gcbba_timestep < 0:
             self.run_gcbba()
-
-        self._plan_paths()
-
+        
         completed_task_ids: List[int] = []
         for agent_state in self.agent_states:
             completed = agent_state.step(self.current_timestep)
@@ -156,6 +154,8 @@ class IntegrationOrchestrator:
 
         for task_id in completed_task_ids:
             self.completed_task_ids.add(task_id)
+
+        self._plan_paths()
 
         # # Log agent positions at this timestep
         # for agent_state in self.agent_states:
