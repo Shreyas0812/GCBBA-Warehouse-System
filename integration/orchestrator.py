@@ -66,6 +66,7 @@ class IntegrationOrchestrator:
         self.current_timestep = 0
         self.last_gcbba_timestep = -self.rerun_interval  # Initialize to allow GCBBA to run at timestep 0
         self.completed_task_ids: Set[int] = set()
+        self._completed_at_last_gcbba: int = 0  # Track how many tasks were completed at the time of the last GCBBA run to help determine when to trigger next run
 
         self.latest_assignment: List[List[int]] = []  # Store latest GCBBA assignment for reference in stepping logic
 
@@ -258,6 +259,7 @@ class IntegrationOrchestrator:
                 agent_state.needs_new_path = True
         
         self.last_gcbba_timestep = self.current_timestep
+        self._completed_at_last_gcbba = len(self.completed_task_ids)  # Update the count of completed tasks at the time of this GCBBA run
 
     def _get_executing_task_ids(self) -> Set[int]:
         executing_task_ids = set()
@@ -346,10 +348,12 @@ class IntegrationOrchestrator:
         # Cooldown to prevent excessive GCBBA reruns on close timestep events
         min_cooldown = max(3, self.rerun_interval // 3)  # At least 3 timesteps cooldown or a fraction of the rerun interval
 
-        if time_since_last_gcbba >= self.rerun_interval:
-            gcbba_rerun = True  # Trigger GCBBA rerun periodically based on rerun_interval
-        elif (completed_task_ids or stuck_agent_ids) and time_since_last_gcbba >= min_cooldown:
-            gcbba_rerun = True  # Trigger GCBBA rerun if there are events and cooldown has passed
+        batch_threshold = max(2, self.num_agents // 3)  # Threshold for batch triggering based on number of agents
+        completed_since_last = len(self.completed_task_ids) - self._completed_at_last_gcbba
+        if completed_since_last >= batch_threshold and time_since_last_gcbba >= min_cooldown:
+            gcbba_rerun = True  # Trigger GCBBA rerun if enough tasks have been completed since the last run and cooldown has passed
+        elif stuck_agent_ids and time_since_last_gcbba >= min_cooldown:
+            gcbba_rerun = True  # Trigger GCBBA rerun if there are stuck agents and cooldown has passed
 
         return OrchestratorEvents(
             completed_task_ids=completed_task_ids,
