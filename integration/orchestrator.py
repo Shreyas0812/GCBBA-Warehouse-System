@@ -352,8 +352,10 @@ class IntegrationOrchestrator:
         completed_since_last = len(self.completed_task_ids) - self._completed_at_last_gcbba
         if completed_since_last >= batch_threshold and time_since_last_gcbba >= min_cooldown:
             gcbba_rerun = True  # Trigger GCBBA rerun if enough tasks have been completed since the last run and cooldown has passed
-        elif stuck_agent_ids and time_since_last_gcbba >= min_cooldown:
-            gcbba_rerun = True  # Trigger GCBBA rerun if there are stuck agents and cooldown has passed
+        
+        # Handled via needs_new_plan flag in AgentState which triggers replanning (and indirectly GCBBA rerun if new paths are needed for assigned tasks)
+        # elif stuck_agent_ids and time_since_last_gcbba >= min_cooldown:
+        #     gcbba_rerun = True  # Trigger GCBBA rerun if there are stuck agents and cooldown has passed
 
         return OrchestratorEvents(
             completed_task_ids=completed_task_ids,
