@@ -150,6 +150,7 @@ class IntegrationOrchestrator:
         """
         if self.current_timestep == 0 or self.last_gcbba_timestep < 0:
             self.run_gcbba()
+            self._plan_paths()
 
         completed_task_ids: List[int] = []
         for agent_state in self.agent_states:
@@ -160,12 +161,6 @@ class IntegrationOrchestrator:
 
         for task_id in completed_task_ids:
             self.completed_task_ids.add(task_id)
-
-        self._plan_paths()
-
-        # # Log agent positions at this timestep
-        # for agent_state in self.agent_states:
-        #     print(f"  t={self.current_timestep} Agent {agent_state.agent_id} @ {tuple(agent_state.pos)}")
 
         # Check if we need to rerun GCBBA
         events = self._detect_events(completed_task_ids)
@@ -335,6 +330,14 @@ class IntegrationOrchestrator:
         print(f"Trajectories saved to {path}")
 
     def _detect_events(self, completed_task_ids: List[int]) -> OrchestratorEvents:
+
+        if self.rerun_interval >= self.max_plan_time * 2:
+            return OrchestratorEvents(
+                completed_task_ids=completed_task_ids,
+                stuck_agent_ids=[],
+                gcbba_rerun=False
+            )
+
         stuck_agent_ids: List[int] = []
 
         for agent_state in self.agent_states:
