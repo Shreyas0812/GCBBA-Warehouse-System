@@ -38,7 +38,7 @@ class IntegrationOrchestrator:
                  config_path: str, 
                  tasks_per_induct_station: int = 10,
                  comm_range: float = 30,
-                 sp_lim: Tuple[float, float] = (1.0, 5.0),
+                 sp_lim: Tuple[float, float] = (1.0, 1.0),
                  rerun_interval: int = 10,
                  stuck_threshold: int = 15,
                  prediction_horizon: int = 5,
