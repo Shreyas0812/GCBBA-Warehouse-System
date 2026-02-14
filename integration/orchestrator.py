@@ -162,6 +162,8 @@ class IntegrationOrchestrator:
         for task_id in completed_task_ids:
             self.completed_task_ids.add(task_id)
 
+        self._plan_paths()
+
         # Check if we need to rerun GCBBA
         events = self._detect_events(completed_task_ids)
 
