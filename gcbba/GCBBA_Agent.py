@@ -82,6 +82,21 @@ class GCBBA_Agent:
         else:
             self.pos_grid = None
 
+    def snapshot(self):
+        """
+        Lightweight snapshot for consenus-relevant information to share with neighbors
+        """
+        snap = object.__new__(GCBBA_Agent)
+        snap.id = self.id
+        snap.y = self.y[:]
+        snap.z = self.z[:]
+        # snap.c = self.c[:]
+        # snap.S = self.S[:]
+        snap.s = self.s[:]
+        snap.their_net_cvg = self.their_net_cvg[:]
+        # snap.converged = self.converged
+        return snap
+
     def _get_task_index(self, task_id):
         """Get the index for a given task_id"""
         return self.task_id_to_idx.get(task_id, None)
@@ -146,7 +161,8 @@ class GCBBA_Agent:
         P = self.p # List of currrent task ids in path
         
         for pos in range(len(self.p) + 1):
-            P1 = copy.deepcopy(P)
+            # P1 = copy.deepcopy(P)
+            P1 = list(P)
             P1.insert(pos, task_id)
             path_score = self.evaluate_path(P1)
 
@@ -217,7 +233,7 @@ class GCBBA_Agent:
             return table[target_grid]
                 
         # If BFS distances are not available, fallback to Manhattan distance
-        return np.linalg.norm(pos1 - pos2)
+        return np.linalg.norm(np.array(pos) - np.array(target_pos))
 
 
     def resolve_conflicts(self, all_agents, consensus_iter=0, consensus_index_last=False):

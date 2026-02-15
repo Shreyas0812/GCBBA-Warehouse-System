@@ -85,7 +85,8 @@ class GCBBA_Orchestrator:
             
             # Consensus phase
             for consensus_num in range(nb_cons):
-                all_agents = copy.deepcopy(self.agents)
+                # all_agents = copy.deepcopy(self.agents)
+                all_agents = [agent.snapshot() for agent in self.agents]
                 consensus_iter = nb_cons * iter + consensus_num
                 if consensus_num == nb_cons - 1:
                     consensus_index_last = True
