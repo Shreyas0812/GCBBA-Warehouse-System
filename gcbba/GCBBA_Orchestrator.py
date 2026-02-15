@@ -11,7 +11,7 @@ class GCBBA_Orchestrator:
     """
     GCBBA Orchestrator for warehouse task allocation
     """
-    def __init__(self, G, D, char_t, char_a, Lt=1, metric="RPT", task_ids=None):
+    def __init__(self, G, D, char_t, char_a, Lt=1, metric="RPT", task_ids=None, grid_map=None):
         self.G = G
         # int, number of agents
         self.na = G.shape[0]
@@ -35,6 +35,7 @@ class GCBBA_Orchestrator:
         
         self.metric = metric
         self.D = D
+        self.grid_map = grid_map
         
         # initialize tasks and agents
         self.initialize_all()
@@ -53,7 +54,7 @@ class GCBBA_Orchestrator:
         self.tasks = []
         for j in range(self.nt):
             char_t = self.char_t[j]
-            self.tasks.append(GCBBA_Task(id=self.task_ids[j], char_t=char_t))
+            self.tasks.append(GCBBA_Task(id=self.task_ids[j], char_t=char_t, grid_map=self.grid_map))
     
     def initialize_agents(self):
         self.agents = []
@@ -61,7 +62,7 @@ class GCBBA_Orchestrator:
             char_a = self.char_a[i]
             self.agents.append(
                 GCBBA_Agent(id=i, G=self.G, char_a=char_a, tasks=self.tasks, Lt=self.Lt, 
-                           start_time=self.start_time, metric=self.metric, D=self.D))
+                           start_time=self.start_time, metric=self.metric, D=self.D, grid_map=self.grid_map))
     
     def launch_agents(self, method="global", detector="decentralized"):
         """

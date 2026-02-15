@@ -1,6 +1,7 @@
 import numpy as np
 import yaml
 import os
+from collections import deque
 
 class GridMap:
     """
@@ -28,10 +29,13 @@ class GridMap:
         
         # Mark induct and eject stations
         induct_stations_flat = params['induct_stations']
-        self.mark_induct_stations(induct_stations_flat)
+        induct_stations = self.mark_induct_stations(induct_stations_flat)
         
         eject_stations_flat = params['eject_stations']
-        self.mark_eject_stations(eject_stations_flat)
+        eject_stations = self.mark_eject_stations(eject_stations_flat)
+
+        all_stations = induct_stations + eject_stations
+        self.bfs_distances_from_station = self.precompute_bfs_distances(all_stations)
 
         total_cells = self.width * self.height * self.depth
         obstacle_cells = np.sum(self.grid == 1)
@@ -74,12 +78,16 @@ class GridMap:
         :param induct_stations_flat: [x, y, z, station_id, ...]
         """
         num_stations = len(induct_stations_flat) // 4
+        induct_stations = []
         for i in range(num_stations):
             x = int(induct_stations_flat[i * 4 + 0] / self.resolution)
             y = int(induct_stations_flat[i * 4 + 1] / self.resolution)
             z = int(induct_stations_flat[i * 4 + 2] / self.resolution)
             if self._in_bounds(x, y, z):
                 self.grid[z, y, x] = 2  # Mark as induct station
+                induct_stations.append((x, y, z))
+        
+        return induct_stations
     
     def mark_eject_stations(self, eject_stations_flat):
         """
@@ -88,17 +96,40 @@ class GridMap:
         :param eject_stations_flat: [x, y, z, station_id, ...]
         """
         num_stations = len(eject_stations_flat) // 4
+        eject_stations = []
         for i in range(num_stations):
             x = int(eject_stations_flat[i * 4 + 0] / self.resolution)
             y = int(eject_stations_flat[i * 4 + 1] / self.resolution)
             z = int(eject_stations_flat[i * 4 + 2] / self.resolution)
             if self._in_bounds(x, y, z):
                 self.grid[z, y, x] = 3  # Mark as eject station
+                eject_stations.append((x, y, z))
+        return eject_stations
 
     def _in_bounds(self, x, y, z):
         return 0 <= x < self.width and 0 <= y < self.height and 0 <= z < self.depth
     
+    def precompute_bfs_distances(self, stations):
+        """
+        BFS distances from induct and eject stations to all other cells in the grid.
+        
+        :param self: Description
+        """
+        dist_table = {}
+        for station in stations:
+            dist = {station: 0}
+            queue = deque([station])
+            while queue:
+                pos = queue.popleft()
+                for neighbor in self.get_neighbors(*pos):
+                    if neighbor not in dist:
+                        dist[neighbor] = dist[pos] + 1
+                        queue.append(neighbor)
+        
+            dist_table[station] = dist
 
+        return dist_table
+    
     def continuous_to_grid(self, x, y, z):
         """
         Converts continuous coordinates to grid indices.

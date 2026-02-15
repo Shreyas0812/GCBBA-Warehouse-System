@@ -11,7 +11,7 @@ class GCBBA_Agent:
     """
     GCBBA Agent for warehouse operations
     """
-    def __init__(self, id, G, char_a, tasks, Lt=2, start_time=0, metric="RPT", D=1):
+    def __init__(self, id, G, char_a, tasks, Lt=2, start_time=0, metric="RPT", D=1, grid_map=None):
         # int, id of agent
         self.id = id
         # communication matrix G (symmetrical), size Na * Na
@@ -75,6 +75,12 @@ class GCBBA_Agent:
 
         # task_id to index mapping
         self.task_id_to_idx = {task.id: i for i, task in enumerate(self.tasks)}
+
+        self.grid_map = grid_map
+        if self.grid_map is not None:
+            self.pos_grid = self.grid_map.continuous_to_grid(*self.pos)
+        else:
+            self.pos_grid = None
 
     def _get_task_index(self, task_id):
         """Get the index for a given task_id"""
@@ -166,6 +172,7 @@ class GCBBA_Agent:
         S_i(p_i) = Σ_{j∈p_i} c_ij(p^:j_i)
         """
         cur_pos = self.pos
+        cus_pos_grid = self.pos_grid
         score = 0
         time = 0
 
@@ -179,21 +186,40 @@ class GCBBA_Agent:
                 # Later TODO: May add an additional time to perform the induct/eject operation itself
 
                 # Travel to induct position
-                induct_pos = task.induct_pos
-                time += np.linalg.norm(cur_pos - induct_pos) / self.speed
+                time += self._get_distance(cur_pos, cus_pos_grid, task.induct_pos, task.induct_grid) / self.speed
                 
                 # Task duration: distance from induct to eject
-                eject_pos = task.eject_pos
-                time += np.linalg.norm(induct_pos - eject_pos) / self.speed
+                time += self._get_distance(task.induct_pos, task.induct_grid, task.eject_pos, task.eject_grid) / self.speed
                 
                 score -= time
                 time = 0  # Reset time for next task
 
                 # Update current position to eject position
-                cur_pos = eject_pos
+                cur_pos = task.eject_pos
+                cus_pos_grid = task.eject_grid
                 
         return score
     
+    def _get_distance(self, pos, pos_grid, target_pos, target_grid):
+
+        if self.grid_map is None or pos_grid is None or target_grid is None:
+            # Manhattan distance as fallback if grid map is not available
+            return np.linalg.norm(pos - target_pos)
+        
+        # BFS from taget (target is Station)
+        table = self.grid_map.bfs_distances_from_station.get(target_grid)
+        if table is not None and pos_grid in table:
+            return table[pos_grid]
+        
+        # BFS from pos (pos is Staion)
+        table = self.grid_map.bfs_distances_from_station.get(pos_grid)
+        if table is not None and target_grid in table:
+            return table[target_grid]
+                
+        # If BFS distances are not available, fallback to Manhattan distance
+        return np.linalg.norm(pos1 - pos2)
+
+
     def resolve_conflicts(self, all_agents, consensus_iter=0, consensus_index_last=False):
         """
         Resolve conflicts with neighboring agents based on communication graph G -- consensus phase

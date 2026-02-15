@@ -237,7 +237,7 @@ class IntegrationOrchestrator:
             Lt = self.Lt
         
         # Fresh GCBBBA Orchestrator instance with updated parameters and state
-        gcbba_orch = GCBBA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids)
+        gcbba_orch = GCBBA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids, grid_map=self.grid_map)
         assignment, total_score, makespan = gcbba_orch.launch_agents()
 
         tqdm.write(f"[t={self.current_timestep}] GCBBA: {nt_active} active tasks, "
