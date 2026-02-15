@@ -133,7 +133,7 @@ class GCBBA_Orchestrator:
                 max_time = a_time
             
             bid_sum += a_time
-            assignment.append(copy.deepcopy(agent.p))
+            assignment.append(list(agent.p))
         
         return assignment, np.round(bid_sum, 6), max_time
     
