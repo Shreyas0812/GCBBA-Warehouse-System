@@ -83,13 +83,17 @@ class SGA_Orchestrator:
             task_indices = list(self.task_ids)
             self._run_sga(agent_indices, task_indices, agent_paths)
         else:
+
+            remaining_task_indices = set(self.task_ids)
             # Multiple connected components: run SGA independently on each component
             # Each component gets access to all tasks (generous to baseline)
             for component in components:
                 agent_indices = sorted(list(component))
-                task_indices = list(self.task_ids)
-                self._run_sga(agent_indices, task_indices, agent_paths)
-
+                task_indices = list(remaining_task_indices)
+                
+                assigned_in_component = self._run_sga(agent_indices, task_indices, agent_paths)
+                remaining_task_indices -= assigned_in_component  # Update remaining tasks for next components
+        
         assignment = []
         for i in range(self.na):
             assignment.append(list(agent_paths[i]))
@@ -103,8 +107,53 @@ class SGA_Orchestrator:
         Core SGA loop: sequentially assign (agent, task) pairs with highest
         marginal gain until no positive bids remain or capacity is reached.
         """
-        print(f"Running SGA on agents {agent_indices} and tasks {task_indices}")
+        available_tasks = set(task_indices)
+        assigned_tasks = set()
 
+        Nmin = min(len(available_tasks), self.Lt * len(agent_indices))
+
+        for _ in range(Nmin):
+            if not available_tasks:
+                break
+
+            best_bid = -float('inf')
+            best_agent = None
+            best_task_id = None
+            best_insert_pos = None
+
+            # Evaluate all (agent, task) pairs to find the best bid
+            for i in agent_indices:
+                if len(agent_paths[i]) >= self.Lt:
+                    continue  # Skip if agent has reached capacity
+
+                for task_id in available_tasks:
+                    task = self.tasks[task_id]
+                    bid, insert_pos = self._compute_marginal_gain(i, agent_paths[i], task)
+
+                    if bid > best_bid or (bid == best_bid and best_agent is not None and i < best_agent):
+                        best_bid = bid
+                        best_agent = i
+                        best_task_id = task_id
+                        best_insert_pos = insert_pos   
+            
+            # No positive bids remain, stop allocation
+            if best_bid < 0 or best_agent is None:
+                break
+                
+            # Assign the best task to the best agent
+            task_id = self.tasks[best_task_id].id
+            agent_paths[best_agent].insert(best_insert_pos, task_id)
+            available_tasks.remove(best_task_id)
+            assigned_tasks.add(best_task_id)
+
+        return assigned_tasks
+    
+    def _compute_marginal_gain(self, agent_idx, agent_path, task):
+        """
+        Compute marginal gain of assigning a task to an agent.
+        """
+        # Placeholder for marginal gain computation
+        return 0.0, 0  # Return dummy values
 
 if __name__ == "__main__":
     import yaml
