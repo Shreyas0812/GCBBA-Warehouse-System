@@ -20,3 +20,10 @@ class CBBA_Agent(GCBBA_Agent):
     
     Other functionality remaints the same
     """
+
+    def __init__(self, id, G, char_a, tasks, Lt=2, start_time=0, metric="RPT", D=1, grid_map=None):
+        super().__init__(id, G, char_a, tasks, Lt, start_time, metric, D, grid_map)
+        # CBBA does not use convergence detection
+        self.converged = False
+
+    
