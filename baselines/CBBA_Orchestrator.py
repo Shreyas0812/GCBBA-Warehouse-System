@@ -11,6 +11,8 @@ Interface matches GCBBA_Orchestrator for drop-in replacement.
 """
 
 import time
+import numpy as np
+
 from gcbba.GCBBA_Task import GCBBA_Task
 from baselines.CBBA_Agent import CBBA_Agent
 
