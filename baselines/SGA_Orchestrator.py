@@ -96,10 +96,12 @@ class SGA_Orchestrator:
         assignment = []
         for i in range(self.na):
             assignment.append(list(agent_paths[i]))
+
+        bid_sum, makespan = self._compute_scores(agent_paths)
         
         self.assig_history.append(assignment)
 
-        return assignment, None, None  # Placeholder for assignment, total score, and makespan
+        return assignment, np.round(bid_sum, 2), makespan  # Return assignment, total score, and makespan
     
     def _run_sga(self, agent_indices, task_indices, agent_paths):
         """
@@ -143,8 +145,8 @@ class SGA_Orchestrator:
                         best_task_idx = task_idx
                         best_insert_pos = insert_pos   
             
-            # No positive bids remain, stop allocation
-            if best_bid < 0 or best_agent is None:
+            # No more feasible assignments
+            if best_agent is None:
                 break
                 
             # Assign the best task to the best agent
@@ -243,6 +245,27 @@ class SGA_Orchestrator:
         # Fallback to Euclidean
         return np.linalg.norm(np.array(pos) - np.array(target_pos))
     
+    def _compute_scores(self, agent_paths):
+        """
+        Compute total score (sum of agent scores) and makespan (max completion time across agents) for the current assignment.
+        """
+        total_score = 0
+        makespan = 0
+
+        for i in range(self.na):
+            if not agent_paths[i]:
+                continue  # Skip agents with no assigned tasks
+
+            path_score = self._evaluate_path(i, agent_paths[i])
+            
+            # For total score and makespan, we use completion time (negative of RPT score)
+            completion_time = -path_score
+            total_score += completion_time
+            
+            if completion_time > makespan:
+                makespan = completion_time
+
+        return total_score, makespan
 
 if __name__ == "__main__":
     import yaml
