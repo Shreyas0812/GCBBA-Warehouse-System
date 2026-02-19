@@ -103,7 +103,7 @@ class CBBA_Orchestrator:
         Gather assignment, bid, and max_time information from all agents.
         """
         assignment = []
-        bid = 0
+        bid_sum = 0
         max_time = 0
 
         for agent in self.agents:

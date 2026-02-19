@@ -37,7 +37,7 @@ class CBBA_Agent(GCBBA_Agent):
         """
         while len(self.p) < self.Lt:
             # Recompute all bids from scratch each time a task is added
-            optimal_placement = np.zeros(self.nt)
+            optimal_placement = np.zeros(self.nt, dtype=int)
             filtered_task_ids = [t.id for t in self.tasks if t.id not in self.p]
 
             if not filtered_task_ids:
@@ -72,7 +72,7 @@ class CBBA_Agent(GCBBA_Agent):
             
             # Add best task to bundle and path
             self.b.append(best_task_id)
-            self.p.insert(optimal_placement[best_bid_idx], best_task_id)
+            self.p.insert(int(optimal_placement[best_bid_idx]), best_task_id)
             self.S.append(self.evaluate_path(self.p))
 
             self.y[best_bid_idx] = self.c[best_bid_idx]
