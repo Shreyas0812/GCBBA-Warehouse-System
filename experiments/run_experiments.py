@@ -74,7 +74,7 @@ def run_single_experiment(config_path, allocation_method, comm_range, tasks_per_
 
         # Run the simulation
         t_start = time.time()
-        orchestrator.run_simulation(max_timesteps=MAX_TIMESTEPS, rerun_interval=rerun_interval)
+        orchestrator.run_simulation(timesteps=MAX_TIMESTEPS)
         t_end = time.time()
 
         completed = len(orchestrator.completed_tasks)
@@ -134,3 +134,71 @@ def save_results_to_csv(results, output_path):
         writer.writerows(results)
     
     print(f"\nResults saved to {output_path}")
+
+# ================================================== Main ==================================================
+
+if __name__ == "__main__":
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_path = os.path.join(RESULTS_DIR, f"results_{timestamp}.csv")
+
+    experiments = []
+
+    for allocation_method, comm_range, tasks_per_induct, seed in product(ALLOCATION_METHODS, COMM_RANGES, TASKS_PER_INDUCT, SEEDS):
+        if RUN_STATIC:
+            experiments.append({
+                "allocation_method": allocation_method,
+                "comm_range": comm_range,
+                "tasks_per_induct": tasks_per_induct,
+                "seed": seed,
+                "rerun_interval": STATIC_RERUN_INTERVAL,
+                "label": f"{allocation_method}_static_cr{comm_range}_tpi{tasks_per_induct}_seed{seed}"
+            })
+        
+        if RUN_DYNAMIC:
+            experiments.append({
+                "allocation_method": allocation_method,
+                "comm_range": comm_range,
+                "tasks_per_induct": tasks_per_induct,
+                "seed": seed,
+                "rerun_interval": RERUN_INTERVAL,
+                "label": f"{allocation_method}_dynamic_cr{comm_range}_tpi{tasks_per_induct}_seed{seed}"
+            })
+
+    total = len(experiments)
+    print(f"Running {total} experiments ({len(ALLOCATION_METHODS)} methods × "
+        f"{len(COMM_RANGES)} ranges × {len(TASKS_PER_INDUCT)} loads × "
+        f"{len(SEEDS)} seeds × {'static+dynamic' if RUN_STATIC and RUN_DYNAMIC else 'single'})")
+    print(f"Results will be saved to: {output_path}\n")
+
+    results = []
+    for idx, exp in enumerate(experiments):
+        print(f"\n{'='*60}")
+        print(f"[{idx+1}/{total}] {exp['label']}")
+        print(f"{'='*60}")
+
+        result = run_single_experiment(
+            config_path=CONFIG_PATH,
+            allocation_method=exp["allocation_method"],
+            comm_range=exp["comm_range"],
+            tasks_per_induct=exp["tasks_per_induct"],
+            seed=exp["seed"],
+            rerun_interval=exp["rerun_interval"],
+            max_timesteps=MAX_TIMESTEPS,
+            label=exp["label"]
+        )
+        results.append(result)
+
+        # Print summary
+        if result["error"]:
+            print(f"  ❌ ERROR: {result['error']}")
+        else:
+            print(f"  ✓ {result['completed_tasks']}/{result['total_tasks']} tasks "
+                f"({result['completion_rate']*100:.1f}%) in {result['final_timestep']} steps, "
+                f"{result['wall_time_s']}s wall time")
+            
+        # Save results after each experiment to avoid data loss
+        save_results_to_csv(results, output_path)
+
+    print(f"\n{'='*60}")
+    print(f"All {total} experiments complete. Results: {output_path}")
+    print(f"{'='*60}")
