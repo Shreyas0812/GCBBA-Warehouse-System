@@ -116,3 +116,21 @@ def run_single_experiment(config_path, allocation_method, comm_range, tasks_per_
             "label": label,
             "error": str(e)
         }
+    
+def save_results_to_csv(results, output_path):
+    """
+    Save a list of result dictionaries to a CSV file.
+    """
+    if not results:
+        print("No results to save.")
+        return
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    field_names = results[0].keys()
+
+    with open(output_path, mode='w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=field_names)
+        writer.writeheader()
+        writer.writerows(results)
+    
+    print(f"\nResults saved to {output_path}")
