@@ -232,6 +232,53 @@ class GridMap:
             return False
         return self.grid[grid_z, grid_y, grid_x] == 4
 
+    def reconstruct_path_to_station(self, start: tuple, station: tuple) -> list:
+        """
+        Reconstruct the shortest obstacle-free path from `start` to `station` using
+        the precomputed BFS distance table for that station.
+
+        This is O(path_length) — no search tree, no priority queue — making it
+        orders of magnitude faster than time-expanded A* for charging navigation
+        where the goal is a fixed map position.
+
+        At each step the algorithm moves to whichever valid neighbour has the
+        smallest BFS distance to the station (greedy gradient descent on the
+        distance field).  Because the distance field was built by BFS on the
+        same obstacle-free grid, the result is guaranteed to be a shortest path
+        and will never revisit a cell.
+
+        Returns a list of grid positions [start, ..., station], or just [start]
+        if the station is unreachable (no BFS entry exists for start).
+        """
+        dist_map = self.bfs_distances_from_station.get(station)
+        if dist_map is None or start not in dist_map:
+            return [start]  # Station not precomputed or unreachable
+
+        path = [start]
+        current = start
+        visited = {start}
+
+        while current != station:
+            best_neighbor = None
+            best_dist = dist_map.get(current, float('inf'))
+
+            for neighbor in self.get_neighbors(*current):
+                if neighbor in visited:
+                    continue
+                d = dist_map.get(neighbor, float('inf'))
+                if d < best_dist:
+                    best_dist = d
+                    best_neighbor = neighbor
+
+            if best_neighbor is None:
+                break  # Stuck — shouldn't happen if BFS table is consistent
+
+            path.append(best_neighbor)
+            visited.add(best_neighbor)
+            current = best_neighbor
+
+        return path
+
     def get_neighbors(self, grid_x, grid_y, grid_z):
         """
         Gets valid neighboring cells (6-connectivity).

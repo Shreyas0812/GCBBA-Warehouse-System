@@ -399,13 +399,22 @@ class IntegrationOrchestrator:
                 continue
 
             start = agent_state.get_position()
-            path = self.ca.plan_path_with_reservations(
-                start=start,
-                goal=goal,
-                agent_id=agent_state.agent_id,
-                max_time=self.max_plan_time,
-                start_time=self.current_timestep
-            )
+
+            # For charging navigation, use BFS gradient descent on the precomputed
+            # distance field instead of time-expanded A*.  The goal is a fixed map
+            # position so the shortest obstacle-free path is already encoded in the
+            # BFS table — reconstruction is O(path_length) with no search overhead,
+            # regardless of how many other agents are in the corridor.
+            if agent_state.is_navigating_to_charger:
+                path = self.grid_map.reconstruct_path_to_station(start, goal)
+            else:
+                path = self.ca.plan_path_with_reservations(
+                    start=start,
+                    goal=goal,
+                    agent_id=agent_state.agent_id,
+                    max_time=self.max_plan_time,
+                    start_time=self.current_timestep
+                )
 
             if path is None:
                 path = [start]  # No path found, stay in place
