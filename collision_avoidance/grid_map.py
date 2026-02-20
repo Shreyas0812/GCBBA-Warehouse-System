@@ -20,7 +20,7 @@ class GridMap:
         self.depth = int(params['grid_depth'])
         self.resolution = float(params['grid_resolution'])
 
-        # Create occupancy grid (0 = free, 1 = obstacle, 2 = induct station, 3 = eject station)
+        # Create occupancy grid (0 = free, 1 = obstacle, 2 = induct station, 3 = eject station, 4 = charging station)
         self.grid = np.zeros((self.depth, self.height, self.width), dtype=np.uint8)
 
         # Mark obstacles in the grid
@@ -34,19 +34,25 @@ class GridMap:
         eject_stations_flat = params['eject_stations']
         eject_stations = self.mark_eject_stations(eject_stations_flat)
 
-        all_stations = induct_stations + eject_stations
+        # Charging stations are marked after obstacles so their cells overwrite obstacle type
+        charging_stations_flat = params.get('charging_stations', [])
+        charging_stations = self.mark_charging_stations(charging_stations_flat)
+
+        all_stations = induct_stations + eject_stations + charging_stations
         self.bfs_distances_from_station = self.precompute_bfs_distances(all_stations)
 
         total_cells = self.width * self.height * self.depth
         obstacle_cells = np.sum(self.grid == 1)
         induct_cells = np.sum(self.grid == 2)
         eject_cells = np.sum(self.grid == 3)
+        charging_cells = np.sum(self.grid == 4)
         print("Grid Initialized:")
         print(f" - Dimensions: {self.width} x {self.height} x {self.depth}")
         print(f" - Total Cells: {total_cells}")
         print(f" - Obstacle Cells: {obstacle_cells}")
         print(f" - Induct Stations: {induct_cells}")
         print(f" - Eject Stations: {eject_cells}")
+        print(f" - Charging Stations: {charging_cells}")
         print(f" - Resolution: {self.resolution}")
 
 
@@ -105,6 +111,25 @@ class GridMap:
                 self.grid[z, y, x] = 3  # Mark as eject station
                 eject_stations.append((x, y, z))
         return eject_stations
+
+    def mark_charging_stations(self, charging_stations_flat):
+        """
+        Marks charging stations in the occupancy grid (type 4).
+        Called after mark_obstacles so charging station cells overwrite any obstacle marking,
+        making them navigable islands inside otherwise-blocked areas.
+
+        :param charging_stations_flat: [x, y, z, station_id, ...]
+        """
+        num_stations = len(charging_stations_flat) // 4
+        charging_stations = []
+        for i in range(num_stations):
+            x = int(charging_stations_flat[i * 4 + 0] / self.resolution)
+            y = int(charging_stations_flat[i * 4 + 1] / self.resolution)
+            z = int(charging_stations_flat[i * 4 + 2] / self.resolution)
+            if self._in_bounds(x, y, z):
+                self.grid[z, y, x] = 4  # Mark as charging station
+                charging_stations.append((x, y, z))
+        return charging_stations
 
     def _in_bounds(self, x, y, z):
         return 0 <= x < self.width and 0 <= y < self.height and 0 <= z < self.depth
@@ -198,6 +223,14 @@ class GridMap:
         if not self._in_bounds(grid_x, grid_y, grid_z):
             return False
         return self.grid[grid_z, grid_y, grid_x] == 3
+
+    def is_charging_station(self, grid_x, grid_y, grid_z):
+        """
+        Checks if a grid cell is a charging station.
+        """
+        if not self._in_bounds(grid_x, grid_y, grid_z):
+            return False
+        return self.grid[grid_z, grid_y, grid_x] == 4
 
     def get_neighbors(self, grid_x, grid_y, grid_z):
         """

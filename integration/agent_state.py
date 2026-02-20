@@ -161,6 +161,11 @@ class AgentState:
 
         # Move to Charging
         if self.is_navigating_to_charger:
+            if self.current_path is None:
+                # Path not yet assigned (plan_paths hasn't found a valid route yet).
+                # Stay in place and wait for the next planning cycle.
+                self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
+                return False
             if self.current_path_index < len(self.current_path):
                 next_pos = self.current_path[self.current_path_index]
                 self.pos = np.array(next_pos, dtype=np.int32)
@@ -182,6 +187,8 @@ class AgentState:
             self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
             if charging_complete:
                 self.is_idle = True
+                self.current_path = None       # Clear stale charging path so run_allocation
+                self.current_path_index = 0    # correctly detects that a new path is needed
                 self.needs_new_path = False
             return False # No task completion during charging
 

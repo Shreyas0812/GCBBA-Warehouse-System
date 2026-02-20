@@ -75,7 +75,7 @@ class IntegrationOrchestrator:
         self.grid_map = GridMap(config_path)
         self.ca = TimeBasedCollisionAvoidance(self.grid_map)
 
-        agent_positions, induct_positions, eject_positions = self._load_config(config_path)
+        agent_positions, induct_positions, eject_positions, charging_positions = self._load_config(config_path)
         self._init_allocation(agent_positions, induct_positions, eject_positions)
         self._init_agent_states()
 
@@ -87,31 +87,35 @@ class IntegrationOrchestrator:
 
         self.latest_assignment: List[List[int]] = []  # Store latest GCBBA assignment for reference in stepping logic
 
-        # For Energy and Charging Logic — convert continuous induct positions to grid-coord 3-tuples
+        # For Energy and Charging Logic — use dedicated charging stations from config
         self.charging_station_grid_positions = [
             self.grid_map.continuous_to_grid(float(pos[0]), float(pos[1]), float(pos[2]))
-            for pos in induct_positions
+            for pos in charging_positions
         ]
 
-    def _load_config(self, config_path: str) -> Tuple[List, List, List]:
+    def _load_config(self, config_path: str) -> Tuple[List, List, List, List]:
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
-        
+
         params = config["create_gridworld_node"]["ros__parameters"]
 
         agent_pos_flat = params['agent_positions']
         agent_positions = [(agent_pos_flat[i], agent_pos_flat[i+1], agent_pos_flat[i+2], agent_pos_flat[i+3])
                                 for i in range(0, len(agent_pos_flat), 4)]
-        
+
         induct_pos_flat = params['induct_stations']
-        induct_positions = [(induct_pos_flat[i], induct_pos_flat[i+1], induct_pos_flat[i+2], induct_pos_flat[i+3]) 
+        induct_positions = [(induct_pos_flat[i], induct_pos_flat[i+1], induct_pos_flat[i+2], induct_pos_flat[i+3])
                                  for i in range(0, len(induct_pos_flat), 4)]
-        
+
         eject_pos_flat = params['eject_stations']
-        eject_positions = [(eject_pos_flat[i], eject_pos_flat[i+1], eject_pos_flat[i+2], eject_pos_flat[i+3]) 
+        eject_positions = [(eject_pos_flat[i], eject_pos_flat[i+1], eject_pos_flat[i+2], eject_pos_flat[i+3])
                                 for i in range(0, len(eject_pos_flat), 4)]
 
-        return agent_positions, induct_positions, eject_positions
+        charging_pos_flat = params.get('charging_stations', [])
+        charging_positions = [(charging_pos_flat[i], charging_pos_flat[i+1], charging_pos_flat[i+2], charging_pos_flat[i+3])
+                                for i in range(0, len(charging_pos_flat), 4)]
+
+        return agent_positions, induct_positions, eject_positions, charging_positions
 
     def _init_allocation(self, agent_positions: List, induct_positions: List, eject_positions: List) -> None:
         """
@@ -149,9 +153,9 @@ class IntegrationOrchestrator:
 
     def _init_agent_states(self) -> None:
         self.agent_states: List[AgentState] = []
-        for idx, gcbba_agent in enumerate(self.gcbba_orchestrator_initial.agents):
+        for gcbba_agent in self.gcbba_orchestrator_initial.agents:
             grid_pos = self.grid_map.continuous_to_grid(float(gcbba_agent.pos[0]), float(gcbba_agent.pos[1]), float(gcbba_agent.pos[2]))
-            self.agent_states.append(AgentState(agent_id=gcbba_agent.agent_id, initial_position=grid_pos, speed=gcbba_agent.speed, max_energy=1000))
+            self.agent_states.append(AgentState(agent_id=gcbba_agent.agent_id, initial_position=grid_pos, speed=gcbba_agent.speed, max_energy=150))
 
     def run_simulation(self, timesteps: int = 100) -> None:
         pbar = tqdm(range(timesteps), desc=f"Simulation ({self.allocation_method.upper()})", leave=True)
@@ -458,19 +462,17 @@ class IntegrationOrchestrator:
         )
 
     #################### Energy and Charging Logic (Optional) ####################
-    def _get_nearest_charging_station(self, agent_state: AgentState, excluded_stations: Optional[Set] = None) -> Tuple[int, Tuple[int, int, int]]:
+    def _get_nearest_charging_station(self, agent_state: AgentState) -> Tuple[int, Tuple[int, int, int]]:
         """
-        Returns (bfs_distance, grid_pos) for the nearest available charging station to the agent.
+        Returns (bfs_distance, grid_pos) for the nearest charging station to the agent.
         Uses precomputed BFS distance tables (keyed by station grid position).
-        Stations in excluded_stations are skipped (already claimed by other agents).
+        Multiple agents may share the same charging station.
         """
         agent_pos = agent_state.get_position()
         best_dist = float('inf')
         best_pos = None
 
         for station_grid_pos in self.charging_station_grid_positions:
-            if excluded_stations and station_grid_pos in excluded_stations:
-                continue
             dist_map = self.grid_map.bfs_distances_from_station.get(station_grid_pos, {})
             dist = dist_map.get(agent_pos, float('inf'))
             if dist < best_dist:
@@ -482,13 +484,16 @@ class IntegrationOrchestrator:
     def _check_and_start_chargin(self) -> List[int]:
         """
         Check if any agents need to start charging and update their state accordingly.
-        Each charging station is assigned to at most one agent at a time.
+        Multiple agents may share the same physical charging station, but concurrent
+        navigating+charging agents are capped at the number of charging stations to
+        prevent all agents flooding the narrow approach corridor simultaneously, which
+        would make the time-expanded A* planner extremely slow.
         """
-        # Stations already claimed by agents currently charging or navigating to a charger
-        claimed_stations: Set = {
-            ast.charging_station_pos for ast in self.agent_states
-            if (ast.is_charging or ast.is_navigating_to_charger) and ast.charging_station_pos is not None
-        }
+        max_concurrent = len(self.charging_station_grid_positions)
+        currently_active = sum(
+            1 for ast in self.agent_states
+            if ast.is_charging or ast.is_navigating_to_charger
+        )
 
         newly_charging_agents = []
 
@@ -496,15 +501,18 @@ class IntegrationOrchestrator:
             if agent_state.is_charging or agent_state.is_navigating_to_charger or agent_state.is_idle:
                 continue
 
-            dist, nearest_charging_station = self._get_nearest_charging_station(agent_state, excluded_stations=claimed_stations)
+            if currently_active >= max_concurrent:
+                break  # Enough agents are already heading to / at chargers this tick
+
+            dist, nearest_charging_station = self._get_nearest_charging_station(agent_state)
 
             if nearest_charging_station is None:
-                continue  # All stations are occupied
+                continue
 
             if agent_state.needs_charging(dist):
                 agent_state.start_charging(nearest_charging_station)
                 newly_charging_agents.append(agent_state.agent_id)
-                claimed_stations.add(nearest_charging_station)  # Reserve for remaining agents in this batch
+                currently_active += 1
 
         return newly_charging_agents
     
