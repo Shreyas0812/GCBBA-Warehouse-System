@@ -65,6 +65,7 @@ class AgentState:
         # energy management
         self.max_energy:int = max_energy
         self.energy:int = max_energy
+        self.is_navigating_to_charger: bool = False
         self.is_charging: bool = False
         self.charge_remaining: int = 0 # timesteps remaining to finish charging when at a charging station
         self.charging_station_pos: Optional[Tuple[int, int, int]] = None # For now the position of the nearest induct station, can be updated to track actual charging stations if different
@@ -110,6 +111,20 @@ class AgentState:
         Clears the needs_new_path flag since a path has been provided.
         """
 
+        # Charging navigation has no task — assign path directly
+        if self.is_navigating_to_charger:
+            if len(path) > 1 and tuple(path[0]) == self.get_position():
+                path = path[1:]
+            # Reject trivial paths (empty or stay-in-place) — keep needs_new_path=True
+            # so the orchestrator retries path planning next timestep instead of
+            # immediately "arriving" at the current position and charging in the wrong place.
+            if not path or (len(path) == 1 and tuple(path[0]) == self.get_position()):
+                return
+            self.current_path = path
+            self.current_path_index = 0
+            self.needs_new_path = False
+            return
+
         if self.current_task is None and len(self.planned_tasks) > 0:
             # Start executing the first planned task
             self.current_task = self.planned_tasks.pop(0)
@@ -144,6 +159,23 @@ class AgentState:
 
         self.current_timestep = timestep
 
+        # Move to Charging
+        if self.is_navigating_to_charger:
+            if self.current_path_index < len(self.current_path):
+                next_pos = self.current_path[self.current_path_index]
+                self.pos = np.array(next_pos, dtype=np.int32)
+                self.current_path_index += 1
+                self.deplete_energy()
+                self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
+
+                if self.current_path_index >= len(self.current_path):
+                    self.is_navigating_to_charger = False
+                    self.is_charging = True
+                    self.is_idle = True # Agent is idle while charging
+                    self.needs_new_path = False
+
+            return False # No task completion during navigation to charger
+        
         # Charging 
         if self.is_charging:
             charging_complete = self.step_charging()
@@ -162,6 +194,7 @@ class AgentState:
             next_pos = self.current_path[self.current_path_index]
             self.pos = np.array(next_pos, dtype=np.int32)
             self.current_path_index += 1
+            self.deplete_energy() # Deplete energy for moving
 
             if self.current_task is not None:
                 self.current_task.current_path_index = self.current_path_index
@@ -237,11 +270,15 @@ class AgentState:
         """
         Get the current goal position of the executing task
 
+        - If navigating to charger: returns charging station position
         - If executing to_induct: returns induct position
         - If executing to_eject: returns eject position
         - If idle with planned tasks: returns first planned task's induct position
         - If idle with no tasks: returns None
         """
+        if self.is_navigating_to_charger and self.charging_station_pos is not None:
+            return self.charging_station_pos
+
         if self.current_task is not None:
             if self.task_phase == "to_induct":
                 return self.current_task.induct_pos
@@ -334,13 +371,19 @@ class AgentState:
         """
         Start charging the agent at a charging station. Sets the is_charging flag and initializes charge_remaining.
         """
-        self.is_charging = True
+        self.is_charging = False
+        self.is_navigating_to_charger = True
         self.charge_remaining = charge_duration
         self.charging_station_pos = charging_station_pos
 
         # Drop all planned tasks
         self.planned_tasks = []
-        self.is_idle = True
+        self.current_task = None
+        self.current_path = None
+        self.current_path_index = 0
+        self.task_phase = "to_induct"
+        self.is_idle = False
+        self.needs_new_path = True # Need new path to navigate to charger
 
     def step_charging(self, charge_per_timestep: int = 1) -> bool:
         """

@@ -87,6 +87,12 @@ class IntegrationOrchestrator:
 
         self.latest_assignment: List[List[int]] = []  # Store latest GCBBA assignment for reference in stepping logic
 
+        # For Energy and Charging Logic — convert continuous induct positions to grid-coord 3-tuples
+        self.charging_station_grid_positions = [
+            self.grid_map.continuous_to_grid(float(pos[0]), float(pos[1]), float(pos[2]))
+            for pos in induct_positions
+        ]
+
     def _load_config(self, config_path: str) -> Tuple[List, List, List]:
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
@@ -145,7 +151,7 @@ class IntegrationOrchestrator:
         self.agent_states: List[AgentState] = []
         for idx, gcbba_agent in enumerate(self.gcbba_orchestrator_initial.agents):
             grid_pos = self.grid_map.continuous_to_grid(float(gcbba_agent.pos[0]), float(gcbba_agent.pos[1]), float(gcbba_agent.pos[2]))
-            self.agent_states.append(AgentState(agent_id=gcbba_agent.id, initial_position=grid_pos, speed=gcbba_agent.speed))
+            self.agent_states.append(AgentState(agent_id=gcbba_agent.id, initial_position=grid_pos, speed=gcbba_agent.speed, max_energy=1000))
 
     def run_simulation(self, timesteps: int = 100) -> None:
         pbar = tqdm(range(timesteps), desc=f"Simulation ({self.allocation_method.upper()})", leave=True)
@@ -173,6 +179,12 @@ class IntegrationOrchestrator:
             self.run_allocation()
             self._plan_paths()
 
+        # Track charging state before stepping so we can detect transitions
+        prev_charging_busy = {
+            ast.agent_id: (ast.is_charging or ast.is_navigating_to_charger)
+            for ast in self.agent_states
+        }
+
         completed_task_ids: List[int] = []
         for agent_state in self.agent_states:
             completed = agent_state.step(self.current_timestep)
@@ -182,6 +194,20 @@ class IntegrationOrchestrator:
 
         for task_id in completed_task_ids:
             self.completed_task_ids.add(task_id)
+
+        # Energy and Charging Logic
+        newly_available_agents = [
+            ast.agent_id for ast in self.agent_states
+            if prev_charging_busy.get(ast.agent_id) and not ast.is_charging and not ast.is_navigating_to_charger
+        ]
+        newly_charging_agents = self._check_and_start_chargin()
+
+        if newly_available_agents:
+            tqdm.write(f"Agents finished charging at timestep {self.current_timestep}: {newly_available_agents}")
+        if newly_charging_agents:
+            tqdm.write(f"Agents starting to charge at timestep {self.current_timestep}: {newly_charging_agents}")
+        if newly_charging_agents or newly_available_agents:
+            self.run_allocation()
 
         self._plan_paths()
 
@@ -204,6 +230,17 @@ class IntegrationOrchestrator:
         executing_task_ids = self._get_executing_task_ids()
         excluded_task_ids = self.completed_task_ids | executing_task_ids
 
+        # Agents to Exclude: currently charging or navigating to charger
+        active_agent_indices = [
+            i for i, agent_state in enumerate(self.agent_states)
+            if not agent_state.is_charging and not agent_state.is_navigating_to_charger
+        ]
+
+        if len(active_agent_indices) == 0:
+            tqdm.write(f"No active agents at timestep {self.current_timestep}. Skipping allocation.")
+            self.last_gcbba_timestep = self.current_timestep
+            return
+
         active_char_t = []
         active_task_ids = []
 
@@ -221,23 +258,24 @@ class IntegrationOrchestrator:
             tqdm.write(f"No active tasks to allocate at timestep {self.current_timestep}. Skipping GCBBA run.")
             return
         
-        # Build updated char_a for agents based on their current positions and speeds
+        # Build updated char_a only for active (non-charging) agents
         updated_char_a = []
-        for i, agent_state in enumerate(self.agent_states):
+        for i in active_agent_indices:
+            agent_state = self.agent_states[i]
             if self.current_timestep > 0:
                 predicted_pos = agent_state.get_predicted_position(self.prediction_horizon)
                 continuous_pos = self.grid_map.grid_to_continuous(*predicted_pos)
             else:
-                continuous_pos = (self.all_char_a[i][0], self.all_char_a[i][1], self.all_char_a[i][2])  # Initial position from config
-            
-            speed = float(self.all_char_a[i][3])  # Speed from config
-            agent_id_value = int(self.all_char_a[i][4])  # Agent ID from config
+                continuous_pos = (self.all_char_a[i][0], self.all_char_a[i][1], self.all_char_a[i][2])
 
+            speed = float(self.all_char_a[i][3])
+            agent_id_value = int(self.all_char_a[i][4])
             updated_char_a.append(np.array([continuous_pos[0], continuous_pos[1], continuous_pos[2], speed, agent_id_value]))
 
-        # Recomputing G and D based on updated agent positions
+        # Recomputing G and D based on active agent positions only
         current_positions = []
-        for i, agent_state in enumerate(self.agent_states):
+        for i in active_agent_indices:
+            agent_state = self.agent_states[i]
             pos = agent_state.get_position()
             continuous_pos = self.grid_map.grid_to_continuous(*pos)
             current_positions.append((continuous_pos[0], continuous_pos[1], continuous_pos[2], agent_state.agent_id))
@@ -252,8 +290,8 @@ class IntegrationOrchestrator:
                 # If the graph is not fully connected, we can take the maximum diameter of the connected components as an approximation
                 D = max(nx.diameter(raw_graph.subgraph(c)) for c in nx.connected_components(raw_graph))
 
-        # Computing Capacity 
-        na = self.num_agents
+        # Computing Capacity
+        na = len(active_agent_indices)
         nt_active = len(active_char_t)
         if self.Lt is None:
             Lt = int(np.ceil(nt_active / na))
@@ -289,15 +327,21 @@ class IntegrationOrchestrator:
         )
         
         self.latest_assignment = assignment
-        
-        # Update AgentState with new assignments from GCBBA
-        gcbba_assignments = self._build_assignment_dict(assignment)
 
-        for agent_idx, agent_state in enumerate(self.agent_states):
-            tasks_for_agent = gcbba_assignments.get(agent_idx, [])
+        # _build_assignment_dict uses 0-indexed positions (allocator output); remap to original agent indices
+        gcbba_assignments_by_active_pos = self._build_assignment_dict(assignment)
+
+        for active_pos, original_idx in enumerate(active_agent_indices):
+            tasks_for_agent = gcbba_assignments_by_active_pos.get(active_pos, [])
+            agent_state = self.agent_states[original_idx]
             agent_state.update_from_gcbba(tasks_for_agent, self.current_timestep)
             if agent_state.has_tasks() and agent_state.current_path is None:
                 agent_state.needs_new_path = True
+
+        # Charging/navigating agents get empty updates (preserves their charging state)
+        inactive_indices = set(range(self.num_agents)) - set(active_agent_indices)
+        for i in inactive_indices:
+            self.agent_states[i].update_from_gcbba([], self.current_timestep)
         
         self.last_gcbba_timestep = self.current_timestep
         self._completed_at_last_gcbba = len(self.completed_task_ids)  # Update the count of completed tasks at the time of this GCBBA run
@@ -413,6 +457,57 @@ class IntegrationOrchestrator:
             gcbba_rerun=gcbba_rerun
         )
 
+    #################### Energy and Charging Logic (Optional) ####################
+    def _get_nearest_charging_station(self, agent_state: AgentState, excluded_stations: Optional[Set] = None) -> Tuple[int, Tuple[int, int, int]]:
+        """
+        Returns (bfs_distance, grid_pos) for the nearest available charging station to the agent.
+        Uses precomputed BFS distance tables (keyed by station grid position).
+        Stations in excluded_stations are skipped (already claimed by other agents).
+        """
+        agent_pos = agent_state.get_position()
+        best_dist = float('inf')
+        best_pos = None
+
+        for station_grid_pos in self.charging_station_grid_positions:
+            if excluded_stations and station_grid_pos in excluded_stations:
+                continue
+            dist_map = self.grid_map.bfs_distances_from_station.get(station_grid_pos, {})
+            dist = dist_map.get(agent_pos, float('inf'))
+            if dist < best_dist:
+                best_dist = dist
+                best_pos = station_grid_pos
+
+        return int(best_dist) if best_dist != float('inf') else 0, best_pos
+
+    def _check_and_start_chargin(self) -> List[int]:
+        """
+        Check if any agents need to start charging and update their state accordingly.
+        Each charging station is assigned to at most one agent at a time.
+        """
+        # Stations already claimed by agents currently charging or navigating to a charger
+        claimed_stations: Set = {
+            ast.charging_station_pos for ast in self.agent_states
+            if (ast.is_charging or ast.is_navigating_to_charger) and ast.charging_station_pos is not None
+        }
+
+        newly_charging_agents = []
+
+        for agent_state in self.agent_states:
+            if agent_state.is_charging or agent_state.is_navigating_to_charger or agent_state.is_idle:
+                continue
+
+            dist, nearest_charging_station = self._get_nearest_charging_station(agent_state, excluded_stations=claimed_stations)
+
+            if nearest_charging_station is None:
+                continue  # All stations are occupied
+
+            if agent_state.needs_charging(dist):
+                agent_state.start_charging(nearest_charging_station)
+                newly_charging_agents.append(agent_state.agent_id)
+                claimed_stations.add(nearest_charging_station)  # Reserve for remaining agents in this batch
+
+        return newly_charging_agents
+    
 if __name__ == "__main__":
     PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
     config_path = os.path.join(PROJECT_ROOT, "..", "config", "gridworld_warehouse_small.yaml")
