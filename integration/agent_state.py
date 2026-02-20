@@ -183,7 +183,7 @@ class AgentState:
         
         # Charging 
         if self.is_charging:
-            charging_complete = self.step_charging(charge_per_timestep=5)
+            charging_complete = self.step_charging(charge_per_timestep=1)
             self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
             if charging_complete:
                 self.is_idle = True
@@ -374,7 +374,7 @@ class AgentState:
         if not self.is_charging:
             self.energy = max(0, self.energy - amount)
 
-    def start_charging(self, charging_station_pos: Tuple[int, int, int], charge_duration: int = 30) -> None:
+    def start_charging(self, charging_station_pos: Tuple[int, int, int], charge_duration: int = 6) -> None:
         """
         Start charging the agent at a charging station. Sets the is_charging flag and initializes charge_remaining.
         """

@@ -241,7 +241,22 @@ class IntegrationOrchestrator:
         ]
 
         if len(active_agent_indices) == 0:
-            tqdm.write(f"No active agents at timestep {self.current_timestep}. Skipping allocation.")
+            remaining_tasks = len(self.all_task_ids) - len(self.completed_task_ids) - len(self._get_executing_task_ids())
+            if remaining_tasks > 0:
+                # All agents are charging simultaneously while work remains — throughput is halted.
+                # This is recoverable: allocation re-runs automatically when agents finish charging
+                # (detected via newly_available_agents in step()). Not a deadlock, but a convoy pause.
+                charging_count = sum(1 for a in self.agent_states if a.is_charging or a.is_navigating_to_charger)
+                min_charge_remaining = min(
+                    (a.charge_remaining for a in self.agent_states if a.is_charging),
+                    default=0
+                )
+                tqdm.write(
+                    f"[t={self.current_timestep}] WARNING: All {charging_count} agents charging — "
+                    f"{remaining_tasks} tasks stalled. Resuming in ~{max(1, min_charge_remaining)} timesteps."
+                )
+            else:
+                tqdm.write(f"[t={self.current_timestep}] No active agents. Skipping allocation.")
             self.last_gcbba_timestep = self.current_timestep
             return
 
@@ -493,12 +508,15 @@ class IntegrationOrchestrator:
     def _check_and_start_charging(self) -> List[int]:
         """
         Check if any agents need to start charging and update their state accordingly.
-        Multiple agents may share the same physical charging station.
+        Checks both active AND idle agents. Idle agents must be checked proactively to
+        prevent task-thrashing: without this, a low-energy idle agent gets assigned a task,
+        immediately drops it to charge, gets reassigned, and loops indefinitely.
         """
         newly_charging_agents = []
 
         for agent_state in self.agent_states:
-            if agent_state.is_charging or agent_state.is_navigating_to_charger or agent_state.is_idle:
+            # Only skip agents already handling their charging — idle agents are checked too
+            if agent_state.is_charging or agent_state.is_navigating_to_charger:
                 continue
 
             dist, nearest_charging_station = self._get_nearest_charging_station(agent_state)
