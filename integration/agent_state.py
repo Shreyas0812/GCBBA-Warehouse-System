@@ -38,7 +38,7 @@ class AgentState:
      - Provides methods to update execution state and retrieve current task info
     """
 
-    def __init__(self, agent_id: int, initial_position: Tuple[int, int, int], speed: float = 1.0, max_energy: int = 100):
+    def __init__(self, agent_id: int, initial_position: Tuple[int, int, int], speed: float = 1.0, max_energy: int = 450):
         self.agent_id = agent_id
         self.pos = np.array(initial_position, dtype=np.int32)
         self.speed = speed

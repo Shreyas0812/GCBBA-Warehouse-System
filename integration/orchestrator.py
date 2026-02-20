@@ -425,18 +425,14 @@ class IntegrationOrchestrator:
 
             start = agent_state.get_position()
 
-            # At the induct→to_eject transition, check whether the agent has enough
-            # energy to finish task N AND execute task N+1 in full.  If not, drop the
-            # planned bundle now so those tasks return to the GCBBA pool immediately;
-            # the agent still completes task N (no interruption), then idles and the
-            # reactive charging check sends it to charge before GCBBA reassigns.
+            # At the induct→eject transition, verify the agent can complete the eject
+            # leg AND reach a charger afterward.  Runs unconditionally — even for
+            # single-task agents (planned_tasks == []) — because the to_eject skip in
+            # _check_and_start_charging relies on this gate having already run.
             if (agent_state.task_phase == "to_eject"
-                    and agent_state.current_task is not None
-                    and len(agent_state.planned_tasks) > 0):
+                    and agent_state.current_task is not None):
                 def _bfs_dist(a, b):
-                    """BFS obstacle-aware distance between two grid positions.
-                    Works for any pair where at least one endpoint is a precomputed
-                    station (induct, eject, or charging). Falls back to Manhattan."""
+                    """BFS obstacle-aware distance between two grid positions."""
                     table = self.grid_map.bfs_distances_from_station.get(b)
                     if table is not None and a in table:
                         return table[a]
@@ -446,14 +442,34 @@ class IntegrationOrchestrator:
                     return abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2])
 
                 eject_pos = agent_state.current_task.eject_pos
-                next_task = agent_state.planned_tasks[0]
-                energy_needed = (
-                    _bfs_dist(start, eject_pos)                              # finish task N
-                    + _bfs_dist(eject_pos, next_task.induct_pos)             # travel to next induct
-                    + _bfs_dist(next_task.induct_pos, next_task.eject_pos)   # complete task N+1
-                )
-                if agent_state.energy < energy_needed * 2:  # 1.5x buffer to account for congestion and detours
-                    agent_state.planned_tasks = []
+                dist_to_eject = _bfs_dist(start, eject_pos)
+                charger_dist_from_eject, charger_pos_from_eject = self._get_nearest_charger_from_pos(eject_pos)
+
+                # Drop future planned tasks if there isn't enough energy to complete them
+                if len(agent_state.planned_tasks) > 0:
+                    next_task = agent_state.planned_tasks[0]
+                    energy_for_bundle = (
+                        dist_to_eject
+                        + _bfs_dist(eject_pos, next_task.induct_pos)
+                        + _bfs_dist(next_task.induct_pos, next_task.eject_pos)
+                    )
+                    if agent_state.energy < energy_for_bundle * 2:
+                        agent_state.planned_tasks = []
+
+                # If the agent cannot safely complete the eject leg and then reach a
+                # charger, abort the current task and navigate to charge immediately.
+                # The aborted task re-enters the GCBBA pool on the next allocation run.
+                if charger_pos_from_eject is not None:
+                    energy_to_survive = dist_to_eject + charger_dist_from_eject
+                    if agent_state.energy < int(energy_to_survive * 1.3):
+                        tqdm.write(
+                            f"[t={self.current_timestep}] Agent {agent_state.agent_id}: energy "
+                            f"({agent_state.energy}) too low for eject ({dist_to_eject} steps) + "
+                            f"charger ({charger_dist_from_eject} steps). "
+                            f"Aborting task {agent_state.current_task.task_id}, redirecting to charger."
+                        )
+                        agent_state.start_charging(charger_pos_from_eject)
+                        goal = agent_state.get_current_goal()  # Refresh — now points to charging station
 
             # For charging navigation, use BFS gradient descent on the precomputed
             # distance field instead of time-expanded A*.  The goal is a fixed map
@@ -526,6 +542,23 @@ class IntegrationOrchestrator:
         )
 
     #################### Energy and Charging Logic (Optional) ####################
+    def _get_nearest_charger_from_pos(self, grid_pos: Tuple[int, int, int]) -> Tuple[Optional[int], Optional[Tuple[int, int, int]]]:
+        """
+        Returns (bfs_distance, charger_grid_pos) for the nearest charging station
+        from an arbitrary grid position. Returns (None, None) if unreachable.
+        """
+        best_dist = float('inf')
+        best_pos = None
+        for station_grid_pos in self.charging_station_grid_positions:
+            dist_map = self.grid_map.bfs_distances_from_station.get(station_grid_pos, {})
+            dist = dist_map.get(grid_pos, float('inf'))
+            if dist < best_dist:
+                best_dist = dist
+                best_pos = station_grid_pos
+        if best_dist == float('inf'):
+            return None, None
+        return int(best_dist), best_pos
+
     def _get_nearest_charging_station(self, agent_state: AgentState) -> Tuple[int, Tuple[int, int, int]]:
         """
         Returns (bfs_distance, grid_pos) for the nearest charging station to the agent.
@@ -533,17 +566,8 @@ class IntegrationOrchestrator:
         Multiple agents may share the same charging station.
         """
         agent_pos = agent_state.get_position()
-        best_dist = float('inf')
-        best_pos = None
-
-        for station_grid_pos in self.charging_station_grid_positions:
-            dist_map = self.grid_map.bfs_distances_from_station.get(station_grid_pos, {})
-            dist = dist_map.get(agent_pos, float('inf'))
-            if dist < best_dist:
-                best_dist = dist
-                best_pos = station_grid_pos
-
-        return int(best_dist) if best_dist != float('inf') else 0, best_pos
+        dist, pos = self._get_nearest_charger_from_pos(agent_pos)
+        return (dist if dist is not None else 0), pos
 
     def _check_and_start_charging(self) -> List[int]:
         """
@@ -582,7 +606,7 @@ if __name__ == "__main__":
     orchestrator = IntegrationOrchestrator(config_path)
 
     t0 = time.time()
-    orchestrator.run_simulation(timesteps=400)
+    orchestrator.run_simulation(timesteps=800)
     tf = time.time()
 
     print(f"Simulation completed in {tf - t0} seconds.")
