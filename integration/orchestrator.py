@@ -100,8 +100,8 @@ class IntegrationOrchestrator:
         params = config["create_gridworld_node"]["ros__parameters"]
 
         agent_pos_flat = params['agent_positions']
-        agent_positions = [(agent_pos_flat[i], agent_pos_flat[i+1], agent_pos_flat[i+2], i//3 + 1) 
-                                for i in range(0, len(agent_pos_flat), 3)]
+        agent_positions = [(agent_pos_flat[i], agent_pos_flat[i+1], agent_pos_flat[i+2], agent_pos_flat[i+3])
+                                for i in range(0, len(agent_pos_flat), 4)]
         
         induct_pos_flat = params['induct_stations']
         induct_positions = [(induct_pos_flat[i], induct_pos_flat[i+1], induct_pos_flat[i+2], induct_pos_flat[i+3]) 
@@ -151,7 +151,7 @@ class IntegrationOrchestrator:
         self.agent_states: List[AgentState] = []
         for idx, gcbba_agent in enumerate(self.gcbba_orchestrator_initial.agents):
             grid_pos = self.grid_map.continuous_to_grid(float(gcbba_agent.pos[0]), float(gcbba_agent.pos[1]), float(gcbba_agent.pos[2]))
-            self.agent_states.append(AgentState(agent_id=gcbba_agent.id, initial_position=grid_pos, speed=gcbba_agent.speed, max_energy=1000))
+            self.agent_states.append(AgentState(agent_id=gcbba_agent.agent_id, initial_position=grid_pos, speed=gcbba_agent.speed, max_energy=1000))
 
     def run_simulation(self, timesteps: int = 100) -> None:
         pbar = tqdm(range(timesteps), desc=f"Simulation ({self.allocation_method.upper()})", leave=True)
