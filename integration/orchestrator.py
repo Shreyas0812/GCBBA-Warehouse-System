@@ -199,6 +199,16 @@ class IntegrationOrchestrator:
         for task_id in completed_task_ids:
             self.completed_task_ids.add(task_id)
 
+        # Warn if any agent's energy hit 0 while navigating to charger —
+        # indicates the 20% buffer was insufficient (likely due to congestion).
+        for ast in self.agent_states:
+            if ast.energy == 0 and ast.is_navigating_to_charger:
+                tqdm.write(
+                    f"[t={self.current_timestep}] WARNING: Agent {ast.agent_id} energy "
+                    f"depleted to 0 at {ast.get_position()} while navigating to charger — "
+                    f"consider increasing the charging buffer."
+                )
+
         # Energy and Charging Logic
         newly_available_agents = [
             ast.agent_id for ast in self.agent_states
@@ -415,6 +425,36 @@ class IntegrationOrchestrator:
 
             start = agent_state.get_position()
 
+            # At the induct→to_eject transition, check whether the agent has enough
+            # energy to finish task N AND execute task N+1 in full.  If not, drop the
+            # planned bundle now so those tasks return to the GCBBA pool immediately;
+            # the agent still completes task N (no interruption), then idles and the
+            # reactive charging check sends it to charge before GCBBA reassigns.
+            if (agent_state.task_phase == "to_eject"
+                    and agent_state.current_task is not None
+                    and len(agent_state.planned_tasks) > 0):
+                def _bfs_dist(a, b):
+                    """BFS obstacle-aware distance between two grid positions.
+                    Works for any pair where at least one endpoint is a precomputed
+                    station (induct, eject, or charging). Falls back to Manhattan."""
+                    table = self.grid_map.bfs_distances_from_station.get(b)
+                    if table is not None and a in table:
+                        return table[a]
+                    table = self.grid_map.bfs_distances_from_station.get(a)
+                    if table is not None and b in table:
+                        return table[b]
+                    return abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2])
+
+                eject_pos = agent_state.current_task.eject_pos
+                next_task = agent_state.planned_tasks[0]
+                energy_needed = (
+                    _bfs_dist(start, eject_pos)                              # finish task N
+                    + _bfs_dist(eject_pos, next_task.induct_pos)             # travel to next induct
+                    + _bfs_dist(next_task.induct_pos, next_task.eject_pos)   # complete task N+1
+                )
+                if agent_state.energy < energy_needed * 2:  # 1.5x buffer to account for congestion and detours
+                    agent_state.planned_tasks = []
+
             # For charging navigation, use BFS gradient descent on the precomputed
             # distance field instead of time-expanded A*.  The goal is a fixed map
             # position so the shortest obstacle-free path is already encoded in the
@@ -517,6 +557,11 @@ class IntegrationOrchestrator:
         for agent_state in self.agent_states:
             # Only skip agents already handling their charging — idle agents are checked too
             if agent_state.is_charging or agent_state.is_navigating_to_charger:
+                continue
+
+            # Never interrupt an agent mid-eject — the induct-station energy check
+            # (in _plan_paths) already decided this agent has enough energy to finish.
+            if agent_state.task_phase == "to_eject":
                 continue
 
             dist, nearest_charging_station = self._get_nearest_charging_station(agent_state)

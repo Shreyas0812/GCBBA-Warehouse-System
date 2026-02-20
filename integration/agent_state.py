@@ -168,9 +168,11 @@ class AgentState:
                 return False
             if self.current_path_index < len(self.current_path):
                 next_pos = self.current_path[self.current_path_index]
+                actually_moved = tuple(next_pos) != tuple(self.pos)
                 self.pos = np.array(next_pos, dtype=np.int32)
                 self.current_path_index += 1
-                self.deplete_energy()
+                if actually_moved:  # Wait steps (same cell) don't cost energy
+                    self.deplete_energy()
                 self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
 
                 if self.current_path_index >= len(self.current_path):
@@ -199,9 +201,11 @@ class AgentState:
         # If the agent is currently executing a task, move along the assigned path
         if self.current_path_index < len(self.current_path):
             next_pos = self.current_path[self.current_path_index]
+            actually_moved = tuple(next_pos) != tuple(self.pos)
             self.pos = np.array(next_pos, dtype=np.int32)
             self.current_path_index += 1
-            self.deplete_energy() # Deplete energy for moving
+            if actually_moved:  # Wait steps (same cell) don't cost energy
+                self.deplete_energy()
 
             if self.current_task is not None:
                 self.current_task.current_path_index = self.current_path_index
@@ -414,5 +418,5 @@ class AgentState:
         """
         Agent needs to have enough energy to reach the nearest charging station
         """
-        threshold = int(nearest_charging_station_distance * 1.2) # Add some buffer to ensure agent doesn't run out of energy before reaching station
+        threshold = int(nearest_charging_station_distance * 2) # Add some buffer to ensure agent doesn't run out of energy before reaching station
         return self.energy <= threshold
