@@ -155,7 +155,7 @@ class IntegrationOrchestrator:
         self.agent_states: List[AgentState] = []
         for gcbba_agent in self.gcbba_orchestrator_initial.agents:
             grid_pos = self.grid_map.continuous_to_grid(float(gcbba_agent.pos[0]), float(gcbba_agent.pos[1]), float(gcbba_agent.pos[2]))
-            self.agent_states.append(AgentState(agent_id=gcbba_agent.agent_id, initial_position=grid_pos, speed=gcbba_agent.speed, max_energy=1000))
+            self.agent_states.append(AgentState(agent_id=gcbba_agent.agent_id, initial_position=grid_pos, speed=gcbba_agent.speed, max_energy=100))
 
     def run_simulation(self, timesteps: int = 100) -> None:
         pbar = tqdm(range(timesteps), desc=f"Simulation ({self.allocation_method.upper()})", leave=True)
@@ -493,25 +493,13 @@ class IntegrationOrchestrator:
     def _check_and_start_charging(self) -> List[int]:
         """
         Check if any agents need to start charging and update their state accordingly.
-        Multiple agents may share the same physical charging station, but concurrent
-        navigating+charging agents are capped at the number of charging stations to
-        prevent all agents flooding the narrow approach corridor simultaneously, which
-        would make the time-expanded A* planner extremely slow.
+        Multiple agents may share the same physical charging station.
         """
-        max_concurrent = len(self.charging_station_grid_positions)
-        currently_active = sum(
-            1 for ast in self.agent_states
-            if ast.is_charging or ast.is_navigating_to_charger
-        )
-
         newly_charging_agents = []
 
         for agent_state in self.agent_states:
             if agent_state.is_charging or agent_state.is_navigating_to_charger or agent_state.is_idle:
                 continue
-
-            if currently_active >= max_concurrent:
-                break  # Enough agents are already heading to / at chargers this tick
 
             dist, nearest_charging_station = self._get_nearest_charging_station(agent_state)
 
@@ -521,7 +509,6 @@ class IntegrationOrchestrator:
             if agent_state.needs_charging(dist):
                 agent_state.start_charging(nearest_charging_station)
                 newly_charging_agents.append(agent_state.agent_id)
-                currently_active += 1
 
         return newly_charging_agents
     

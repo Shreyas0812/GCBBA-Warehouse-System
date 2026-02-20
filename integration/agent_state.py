@@ -183,7 +183,7 @@ class AgentState:
         
         # Charging 
         if self.is_charging:
-            charging_complete = self.step_charging()
+            charging_complete = self.step_charging(charge_per_timestep=5)
             self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
             if charging_complete:
                 self.is_idle = True
@@ -378,8 +378,8 @@ class AgentState:
         """
         Start charging the agent at a charging station. Sets the is_charging flag and initializes charge_remaining.
         """
-        self.is_charging = False
-        self.is_navigating_to_charger = True
+        self.is_charging = True
+        self.is_navigating_to_charger = False
         self.charge_remaining = charge_duration
         self.charging_station_pos = charging_station_pos
 
@@ -400,9 +400,7 @@ class AgentState:
         if not self.is_charging:
             return False
         
-        # For simplicity, we assume a fixed charge rate and that the agent will be fully charged after charge_duration timesteps. In a more complex model, we could increment energy each timestep and check for max_energy.
-        # self.energy = min(self.max_energy, self.energy + charge_per_timestep)
-        self.charge_remaining -= 1
+        self.charge_remaining -= charge_per_timestep
         if self.charge_remaining <= 0:
             self.is_charging = False
             self.energy = self.max_energy
