@@ -331,8 +331,12 @@ class IntegrationOrchestrator:
         t_allocation_start = time.perf_counter()
 
         if self.allocation_method == "gcbba":
-            # Fresh GCBBBA Orchestrator instance with updated parameters and state
-            allocator = GCBBA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids, grid_map=self.grid_map)
+            # Pass current energy levels so agents won't bid on tasks they can't afford
+            agent_energies = [self.agent_states[i].energy for i in active_agent_indices]
+            # Fresh GCBBA Orchestrator instance with updated parameters and state
+            allocator = GCBBA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids,
+                                           grid_map=self.grid_map, agent_energies=agent_energies,
+                                           charging_station_grids=self.charging_station_grid_positions)
         
         elif self.allocation_method == "sga":
             allocator = SGA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids, grid_map=self.grid_map)

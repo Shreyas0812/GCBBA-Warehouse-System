@@ -11,7 +11,8 @@ class GCBBA_Orchestrator:
     """
     GCBBA Orchestrator for warehouse task allocation
     """
-    def __init__(self, G, D, char_t, char_a, Lt=1, metric="RPT", task_ids=None, grid_map=None):
+    def __init__(self, G, D, char_t, char_a, Lt=1, metric="RPT", task_ids=None, grid_map=None,
+                 agent_energies=None, charging_station_grids=None):
         self.G = G
         # int, number of agents
         self.na = G.shape[0]
@@ -29,13 +30,17 @@ class GCBBA_Orchestrator:
         self.agents = []
         # list of all tasks
         self.tasks = []
-        
+
         # clock launch
         self.start_time = time.perf_counter()
-        
+
         self.metric = metric
         self.D = D
         self.grid_map = grid_map
+
+        # Energy awareness (optional — None means unconstrained, backward compatible)
+        self.agent_energies = agent_energies
+        self.charging_station_grids = charging_station_grids or []
         
         # initialize tasks and agents
         self.initialize_all()
@@ -60,9 +65,11 @@ class GCBBA_Orchestrator:
         self.agents = []
         for i in range(self.na):
             char_a = self.char_a[i]
+            energy = self.agent_energies[i] if self.agent_energies is not None else None
             self.agents.append(
-                GCBBA_Agent(id=i, G=self.G, char_a=char_a, tasks=self.tasks, Lt=self.Lt, 
-                           start_time=self.start_time, metric=self.metric, D=self.D, grid_map=self.grid_map))
+                GCBBA_Agent(id=i, G=self.G, char_a=char_a, tasks=self.tasks, Lt=self.Lt,
+                           start_time=self.start_time, metric=self.metric, D=self.D, grid_map=self.grid_map,
+                           energy=energy, charging_station_grids=self.charging_station_grids))
     
     def launch_agents(self, method="global", detector="decentralized"):
         """

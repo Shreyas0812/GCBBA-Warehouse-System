@@ -11,7 +11,8 @@ class GCBBA_Agent:
     """
     GCBBA Agent for warehouse operations
     """
-    def __init__(self, id, G, char_a, tasks, Lt=2, start_time=0, metric="RPT", D=1, grid_map=None):
+    def __init__(self, id, G, char_a, tasks, Lt=2, start_time=0, metric="RPT", D=1, grid_map=None,
+                 energy=None, charging_station_grids=None):
         # int, id of agent
         self.id = id
         # communication matrix G (symmetrical), size Na * Na
@@ -31,6 +32,10 @@ class GCBBA_Agent:
         # capacity
         self.Lt = Lt
         self.D = D
+
+        # Energy awareness: current energy and known charger positions (None = unconstrained)
+        self.energy = energy
+        self.charging_station_grids = charging_station_grids or []
         
         self.metric = metric
         if self.metric == "RPT":
@@ -113,6 +118,27 @@ class GCBBA_Agent:
             for task_id in filtered_task_ids:
                 task_idx = self._get_task_index(task_id)
                 c, opt_place = self.compute_c(task_id) # c_ij(p_i) = S_i(p_i ⊕_opt j) - S_i(p_i)
+
+                # Energy feasibility: verify the agent can execute the first task in the
+                # proposed bundle and still reach a charger afterward.
+                # We check only the first task because GCBBA replans between task
+                # executions — by the time task N executes, the agent will have
+                # recharged and been reallocated. Full-bundle feasibility is too strict:
+                # agents are expected to charge mid-bundle, so the only guarantee needed
+                # at bid time is that the immediately next task is affordable.
+                if self.energy is not None and c > self.min_val:
+                    # proposed_path[0] is task_id when inserting at position 0,
+                    # otherwise it's self.p[0] — no need to build the full list.
+                    first_task_id = task_id if int(opt_place) == 0 else self.p[0]
+                    first_task = self.tasks[self._get_task_index(first_task_id)]
+                    energy_for_first = (
+                        self._get_distance(self.pos, self.pos_grid, first_task.induct_pos, first_task.induct_grid)
+                        + self._get_distance(first_task.induct_pos, first_task.induct_grid, first_task.eject_pos, first_task.eject_grid)
+                    )
+                    charger_margin = self._charger_dist_from_pos(first_task.eject_grid)
+                    if self.energy < int((energy_for_first + charger_margin) * 1.1):
+                        c = self.min_val  # Can't afford even the first task — don't bid
+
                 self.c[task_idx] = c
                 self.placement[task_idx] = opt_place
         
@@ -216,6 +242,35 @@ class GCBBA_Agent:
                 
         return score
     
+    def _energy_cost_of_path(self, path):
+        """
+        Total grid steps to execute all tasks in path, starting from the agent's
+        current position.  Mirrors evaluate_path() but sums raw step counts rather
+        than dividing by speed, because energy depletes 1 unit per grid cell moved.
+        """
+        cur_pos = self.pos
+        cur_pos_grid = self.pos_grid
+        cost = 0
+        for task_id in path:
+            task = self.tasks[self._get_task_index(task_id)]
+            cost += self._get_distance(cur_pos, cur_pos_grid, task.induct_pos, task.induct_grid)
+            cost += self._get_distance(task.induct_pos, task.induct_grid, task.eject_pos, task.eject_grid)
+            cur_pos = task.eject_pos
+            cur_pos_grid = task.eject_grid
+        return cost
+
+    def _charger_dist_from_pos(self, pos_grid):
+        """BFS distance from a grid position to the nearest charging station."""
+        if self.grid_map is None or pos_grid is None or not self.charging_station_grids:
+            return 0
+        best = float('inf')
+        for station_grid in self.charging_station_grids:
+            table = self.grid_map.bfs_distances_from_station.get(station_grid, {})
+            d = table.get(pos_grid, float('inf'))
+            if d < best:
+                best = d
+        return int(best) if best != float('inf') else 0
+
     def _get_distance(self, pos, pos_grid, target_pos, target_grid):
 
         if self.grid_map is None or pos_grid is None or target_grid is None:
