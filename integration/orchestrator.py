@@ -463,17 +463,6 @@ class IntegrationOrchestrator:
                 dist_to_eject = _bfs_dist(start, eject_pos)
                 charger_dist_from_eject, charger_pos_from_eject = self._get_nearest_charger_from_pos(eject_pos)
 
-                # Drop future planned tasks if there isn't enough energy to complete them
-                if len(agent_state.planned_tasks) > 0:
-                    next_task = agent_state.planned_tasks[0]
-                    energy_for_bundle = (
-                        dist_to_eject
-                        + _bfs_dist(eject_pos, next_task.induct_pos)
-                        + _bfs_dist(next_task.induct_pos, next_task.eject_pos)
-                    )
-                    if agent_state.energy < energy_for_bundle * 2:
-                        agent_state.planned_tasks = []
-
                 # If the agent cannot safely complete the eject leg and then reach a
                 # charger, abort the current task and navigate to charge immediately.
                 # The aborted task re-enters the GCBBA pool on the next allocation run.
