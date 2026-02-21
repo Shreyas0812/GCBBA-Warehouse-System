@@ -175,8 +175,14 @@ class CBBA_Agent(GCBBA_Agent):
                             self.update(neigh, task_id)
                         elif neigh.s[n] > self.s[n] and self.s[m] > neigh.s[m]:
                             self.reset(task_id)
-        
-        self.compute_s(neigh, consensus_iter)
+
+        # Update timestamps — if this agent had no neighbors (isolated node after
+        # some agents started charging and the remaining active agents are out of range),
+        # only update own timestamp to avoid NameError on undefined `neigh`.
+        if len(neigh_indxs) > 0:
+            self.compute_s(neigh, consensus_iter)
+        else:
+            self.s[self.id] = consensus_iter
 
     def snapshot(self):
         """
