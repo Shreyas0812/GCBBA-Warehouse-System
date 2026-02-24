@@ -32,8 +32,10 @@ Plots generated:
   20. Throughput vs communication range (fixed arrival rate)
   21. Steady-state optimality ratio vs SGA (throughput-based)
   22. Steady-state LaTeX table
-  23. Allocation scalability -- timing vs arrival rate (ALL data incl. ar=0.2)
-      Shows CBBA/SGA super-linear blow-up; the dedicated home for ar=0.2 data.
+  23. Allocation scalability (SS) -- timing vs arrival rate (ALL data incl. ar=0.2)
+      Left: log scale all methods. Right: linear GCBBA vs SGA (CBBA off-chart).
+  24. Batch allocation scalability -- timing vs task count (log scale)
+      Same structure as 23 but for batch mode; shows SGA 3x worse than GCBBA at tpi=20.
 
 Usage:
   python plot_results.py <path_to_experiment_dir>
@@ -2236,7 +2238,8 @@ def _generate_plots_for(exp_dir: str, plot_dir: str) -> None:
     plot_wait_time(df, plot_dir)
     plot_queue_metrics(df, plot_dir)
     plot_throughput_vs_comm_range_ss(df, plot_dir)
-    plot_allocation_scalability(df, plot_dir)   # uses all SS data incl. ar=0.2
+    plot_allocation_scalability(df, plot_dir)        # SS: all data incl. ar=0.2
+    plot_batch_allocation_scalability(df, plot_dir)  # batch: log scale, SGA vs GCBBA
 
     # ── LaTeX tables ──────────────────────────────────────────────
     generate_latex_table(df, plot_dir)
