@@ -34,6 +34,7 @@ import sys
 import csv
 import json
 import time
+import threading
 import argparse
 import itertools
 from dataclasses import dataclass, field, asdict
@@ -99,6 +100,8 @@ class RunMetrics:
     # FIX: num_deadlocks now counts distinct stuck-state entry events (transitions),
     # NOT cumulative stuck-agent-timesteps. An agent stuck for 20 timesteps = 1 event.
     num_deadlocks: int = 0
+    # Number of allocation calls that exceeded the timeout and used the stale assignment.
+    num_allocation_timeouts: int = 0
 
     # ── Allocation call context (A4) ──
     # Mean number of unassigned tasks present at each allocation call.
@@ -200,7 +203,12 @@ class RunMetrics:
 
 class InstrumentedOrchestrator(IntegrationOrchestrator):
     def __init__(self, *args, **kwargs):
+        # C1: pop before passing to super so IntegrationOrchestrator doesn't see it
+        self._allocation_timeout_s: Optional[float] = kwargs.pop("allocation_timeout_s", None)
         super().__init__(*args, **kwargs)
+
+        # C1: count allocation calls that hit the timeout
+        self._num_allocation_timeouts: int = 0
 
         # Allocation tracking
         self._gcbba_run_count = 0
@@ -250,7 +258,13 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
         self._previously_navigating_to_charger: Set[int] = set()
 
     def run_allocation(self) -> None:
-        """Time each allocation call and record the timestep it occurred."""
+        """Time each allocation call and record the timestep it occurred.
+
+        C1: For cbba/sga methods, a threading timeout prevents runaway calls from
+        blocking the simulation indefinitely.  If the call exceeds the timeout, we
+        log the event and continue with whatever assignment state existed before
+        (i.e. the stale assignment — agents keep their current tasks).
+        """
         # A4: count unassigned tasks at this moment (excludes completed + executing)
         executing = self._get_executing_task_ids()
         excluded  = self.completed_task_ids | executing
@@ -258,7 +272,36 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
         self._gcbba_tasks_per_run.append(nt_active)
 
         t0 = time.perf_counter()
-        super().run_allocation()
+
+        use_timeout = (
+            self._allocation_timeout_s is not None
+            and self.allocation_method in ("cbba", "sga")
+        )
+        if use_timeout:
+            exc_box: List[Optional[Exception]] = [None]
+
+            def _target():
+                try:
+                    IntegrationOrchestrator.run_allocation(self)
+                except Exception as e:
+                    exc_box[0] = e
+
+            thread = threading.Thread(target=_target, daemon=True)
+            thread.start()
+            thread.join(timeout=self._allocation_timeout_s)
+            if thread.is_alive():
+                self._num_allocation_timeouts += 1
+                print(
+                    f"[t={self.current_timestep}] ALLOCATION TIMEOUT "
+                    f"(>{self._allocation_timeout_s}s, {self.allocation_method.upper()}, "
+                    f"{nt_active} tasks) — using stale assignment.",
+                    flush=True,
+                )
+            elif exc_box[0] is not None:
+                raise exc_box[0]
+        else:
+            IntegrationOrchestrator.run_allocation(self)
+
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
         self._gcbba_run_count += 1
         self._gcbba_times_ms.append(elapsed_ms)
@@ -662,6 +705,9 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
             m.max_step_time_ms = round(float(max(self._step_times_ms)), 3)
             m.std_step_time_ms = round(float(np.std(self._step_times_ms)), 3)
 
+        # C1: allocation timeout count
+        m.num_allocation_timeouts = self._num_allocation_timeouts
+
         # Build unique run ID — batch mode uses "it{N}" tag, steady-state uses "ar{rate}"
         if self.initial_tasks > 0 and task_arrival_rate == 0:
             m.run_id = f"{config_name}_it{self.initial_tasks}_cr{int(comm_range)}_s{seed}"
@@ -723,6 +769,11 @@ def get_experiment_configs(mode: str = "full") -> List[Dict]:
     WARMUP_TIMESTEPS = 200
     QUEUE_MAX_DEPTH = 5
     BATCH_MAX_TIMESTEPS = 3000  # Batch mode needs more headroom to complete all tasks
+    # C2: CBBA/SGA are much slower per-call at high loads; cap timesteps to prevent
+    # multi-hour runs.  At ar >= 0.1 the simulation is overloaded anyway, so 600
+    # timesteps still gives a meaningful steady-state window (400 ts post-warmup).
+    CBBA_SGA_SS_CAPPED_TIMESTEPS = 600
+    ALLOCATION_TIMEOUT_S = 30.0  # C1: hard cap on a single allocation call
 
     for ar, cr in itertools.product(arrival_rates, comm_ranges):
 
@@ -757,6 +808,8 @@ def get_experiment_configs(mode: str = "full") -> List[Dict]:
             })
 
         # ── Standard CBBA baseline ───────────────────────────────────
+        # C2: cap timesteps at high arrival rates to prevent multi-hour runs
+        cbba_sga_max_ts = CBBA_SGA_SS_CAPPED_TIMESTEPS if ar >= 0.1 else MAX_TIMESTEPS
         configs.append({
             "config_name": "cbba",
             "allocation_method": "cbba",
@@ -767,7 +820,8 @@ def get_experiment_configs(mode: str = "full") -> List[Dict]:
             "rerun_interval": 999999,
             "stuck_threshold": STUCK_THRESHOLD,
             "seeds": seeds,
-            "max_timesteps": MAX_TIMESTEPS,
+            "max_timesteps": cbba_sga_max_ts,
+            "allocation_timeout_s": ALLOCATION_TIMEOUT_S,  # C1
         })
 
         # ── SGA centralized baseline ─────────────────────────────────
@@ -781,7 +835,8 @@ def get_experiment_configs(mode: str = "full") -> List[Dict]:
             "rerun_interval": 999999,
             "stuck_threshold": STUCK_THRESHOLD,
             "seeds": seeds,
-            "max_timesteps": MAX_TIMESTEPS,
+            "max_timesteps": cbba_sga_max_ts,
+            "allocation_timeout_s": ALLOCATION_TIMEOUT_S,  # C1
         })
 
     # ── Batch mode configs (initial_tasks > 0, rate = 0) ─────────────────
@@ -830,6 +885,7 @@ def get_experiment_configs(mode: str = "full") -> List[Dict]:
             "stuck_threshold": STUCK_THRESHOLD,
             "seeds": seeds,
             "max_timesteps": BATCH_MAX_TIMESTEPS,
+            "allocation_timeout_s": ALLOCATION_TIMEOUT_S,  # C1
         })
 
         # SGA batch baseline
@@ -845,6 +901,7 @@ def get_experiment_configs(mode: str = "full") -> List[Dict]:
             "stuck_threshold": STUCK_THRESHOLD,
             "seeds": seeds,
             "max_timesteps": BATCH_MAX_TIMESTEPS,
+            "allocation_timeout_s": ALLOCATION_TIMEOUT_S,  # C1
         })
 
     return configs
@@ -867,6 +924,7 @@ def run_single_experiment(
     max_timesteps: int,
     allocation_method: str = "gcbba",
     initial_tasks: int = 0,
+    allocation_timeout_s: Optional[float] = None,
 ) -> Tuple[RunMetrics, "InstrumentedOrchestrator"]:
     np.random.seed(seed)
 
@@ -881,6 +939,7 @@ def run_single_experiment(
         stuck_threshold=stuck_threshold,
         max_plan_time=200,   # A* search horizon — 30×30 grid, 200 is plenty
         allocation_method=allocation_method,
+        allocation_timeout_s=allocation_timeout_s,
     )
 
     t0 = time.perf_counter()
@@ -930,7 +989,7 @@ SUMMARY_FIELDS = [
     "num_gcbba_runs", "avg_tasks_per_gcbba_call",
     "num_gcbba_runs_batch_triggered", "num_gcbba_runs_interval_triggered",
     "total_gcbba_time_ms", "avg_gcbba_time_ms", "max_gcbba_time_ms", "std_gcbba_time_ms",
-    "num_vertex_collisions", "num_edge_collisions", "num_deadlocks",
+    "num_vertex_collisions", "num_edge_collisions", "num_deadlocks", "num_allocation_timeouts",
     "avg_idle_ratio", "max_idle_ratio", "std_idle_ratio", "task_balance_std",
     "total_distance_all_agents", "avg_distance_per_agent",
     "avg_task_duration", "max_task_duration", "min_task_duration",
@@ -1208,6 +1267,7 @@ def main():
                     cfg["max_timesteps"],
                     allocation_method=cfg.get("allocation_method", "gcbba"),
                     initial_tasks=cfg.get("initial_tasks", 0),
+                    allocation_timeout_s=cfg.get("allocation_timeout_s", None),
                 )
 
                 save_run_results(metrics, orch, output_dir)

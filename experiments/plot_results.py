@@ -60,6 +60,10 @@ Plots generated:
       Real-time feasibility: if avg < 1 s/tick the system can run at 1 Hz in deployment.
   35. Computational budget breakdown -- stacked bar: allocation time + path planning time.
       Shows what fraction of total compute is allocation vs A* path planning per method.
+  36. Energy safety margin (D3) -- avg_final / min_final / min_energy_ever per method.
+      Gap between min_final and min_ever reveals mid-run brownout events.
+  37. Queue depth time series (D4) -- rolling mean queue depth over time from JSON.
+      Shows whether a method clears the queue fast enough or lets it grow unbounded.
 
 Usage:
   python plot_results.py <path_to_experiment_dir>
@@ -3284,6 +3288,202 @@ def plot_step_wall_time(df: pd.DataFrame, plot_dir: str) -> None:
 
 
 # -----------------------------------------------------------------
+#  Plot 36: Energy safety margin (D3)
+# -----------------------------------------------------------------
+
+def plot_energy_safety_margin(df: pd.DataFrame, plot_dir: str) -> None:
+    """
+    Plot 36 — Energy safety margin.
+
+    Three energy indicators per method (both SS and batch):
+      • avg_final_energy  — mean across agents at end of run
+      • min_final_energy  — worst-case agent at end of run
+      • min_energy_ever   — lowest point any agent reached mid-run (A5)
+
+    The gap between min_final_energy and min_energy_ever reveals brownout events
+    that aren't visible in the end-state alone.  A large gap means the method
+    pushed agents into a low-energy state mid-run that self-recovered by the end.
+
+    One panel per mode (SS / batch), bars grouped by method.
+    """
+    SS_METHODS    = CANONICAL_SS_METHODS
+    BATCH_METHODS = CANONICAL_BATCH_METHODS
+
+    panels = []
+    dfc_ss    = _ss_clean_df(df)
+    dfc_batch = _batch_df(df)
+    if not dfc_ss.empty:
+        panels.append(("Steady-State", dfc_ss,    SS_METHODS,    "task_arrival_rate"))
+    if not dfc_batch.empty:
+        panels.append(("Batch",        dfc_batch, BATCH_METHODS, "initial_tasks"))
+
+    if not panels:
+        print("  [!] Skipping energy_safety_margin (no data)")
+        return
+
+    n_panels = len(panels)
+    fig, axes = plt.subplots(1, n_panels, figsize=(7 * n_panels, 5), squeeze=False)
+
+    for col_idx, (title, dfc, methods, _) in enumerate(panels):
+        ax = axes[0, col_idx]
+        methods_here = _canonical_methods_present(dfc, methods)
+        x = np.arange(len(methods_here))
+        width = 0.25
+
+        avg_vals, min_final_vals, min_ever_vals = [], [], []
+        for cfg in methods_here:
+            sub = dfc[dfc["config_name"] == cfg]
+            avg_vals.append(sub["avg_final_energy"].mean() if "avg_final_energy" in sub else 0)
+            min_final_vals.append(sub["min_final_energy"].mean() if "min_final_energy" in sub else 0)
+            min_ever_vals.append(sub["min_energy_ever"].mean() if "min_energy_ever" in sub else 0)
+
+        ax.bar(x - width, avg_vals,       width, label="Avg final energy",    color="#4878D0", alpha=0.85)
+        ax.bar(x,         min_final_vals,  width, label="Min final energy",    color="#EE854A", alpha=0.85)
+        ax.bar(x + width, min_ever_vals,   width, label="Min energy ever",     color="#D65F5F", alpha=0.85)
+
+        # Annotate the brownout gap (min_final - min_ever) for each method
+        for i, (mf, me) in enumerate(zip(min_final_vals, min_ever_vals)):
+            gap = mf - me
+            if gap > 0.5:
+                ax.annotate(
+                    f"Δ{gap:.0f}",
+                    xy=(x[i] + width, me),
+                    xytext=(x[i] + width, me + gap / 2),
+                    ha="center", va="center", fontsize=9, color="#8B0000",
+                    fontweight="bold",
+                )
+
+        ax.set_xticks(x)
+        ax.set_xticklabels([get_label(m) for m in methods_here], rotation=15, ha="right")
+        ax.set_ylabel("Energy (% of max)")
+        ax.set_title(title)
+        ax.set_ylim(0, 110)
+        ax.axhline(0, color="black", linewidth=0.5)
+        ax.legend(loc="upper right", fontsize=10)
+        ax.grid(axis="y", alpha=0.3)
+
+    fig.suptitle(
+        "Energy Safety Margin: Final State vs Mid-Run Minimum\n"
+        r"$\Delta$ = brownout gap (min_final – min_ever); large gap → mid-run energy stress",
+        fontsize=13, y=1.04,
+    )
+    fig.tight_layout()
+    _savefig(fig, plot_dir, "energy_safety_margin")
+
+
+# -----------------------------------------------------------------
+#  Plot 37: Queue depth time series (D4)
+# -----------------------------------------------------------------
+
+def plot_queue_depth_timeseries(exp_dir: str, df: pd.DataFrame, plot_dir: str) -> None:
+    """
+    Plot 37 — Queue depth over time (reads queue_depth_over_time from metrics.json).
+
+    Shows the rolling-average mean queue depth across induct stations over the
+    course of the simulation for each allocation method.
+
+    Useful for diagnosing whether a method clears the queue fast enough, or
+    whether queue depth grows without bound (indicating overload).
+
+    Plots at the median arrival rate and highest comm_range (best-case connectivity).
+    Averaged across seeds.  Vertical line at warmup boundary.
+    """
+    dfc = _ss_clean_df(df)
+    if dfc.empty:
+        print("  [!] Skipping queue_depth_timeseries (no SS data)")
+        return
+
+    ar_vals   = sorted(dfc["task_arrival_rate"].unique())
+    ar_focus  = ar_vals[len(ar_vals) // 2]   # median arrival rate
+    cr_max    = int(dfc["comm_range"].max())
+    methods_here = _canonical_methods_present(dfc, CANONICAL_SS_METHODS)
+
+    WINDOW = 25  # rolling average window (timesteps)
+
+    fig, ax = plt.subplots(figsize=(11, 5))
+    any_plotted = False
+
+    for cfg in methods_here:
+        subset = dfc[
+            (dfc["config_name"] == cfg)
+            & (dfc["task_arrival_rate"] == ar_focus)
+            & (dfc["comm_range"] == cr_max)
+        ]
+        if subset.empty:
+            continue
+
+        all_curves = []
+        max_len = 0
+        for _, row in subset.iterrows():
+            run_id = row.get("run_id", "")
+            json_path = None
+            for root, _, files in os.walk(exp_dir):
+                if "metrics.json" in files and os.path.basename(root) == run_id:
+                    json_path = os.path.join(root, "metrics.json")
+                    break
+            if json_path is None:
+                continue
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    m = json.load(f)
+                qdot = m.get("queue_depth_over_time", [])
+                if len(qdot) < 2:
+                    continue
+                all_curves.append(np.array(qdot, dtype=float))
+                max_len = max(max_len, len(qdot))
+            except Exception:
+                continue
+
+        if not all_curves:
+            continue
+
+        padded = np.array([
+            np.pad(c, (0, max_len - len(c)), mode="edge") for c in all_curves
+        ])
+        mean_qd = padded.mean(axis=0)
+        std_qd  = padded.std(axis=0)
+
+        # Rolling average
+        kernel = np.ones(WINDOW) / WINDOW
+        smooth = np.convolve(mean_qd, kernel, mode="same")
+        t = np.arange(len(smooth))
+
+        color = get_color(cfg)
+        ls    = "-"
+        label = get_label(cfg)
+
+        ax.plot(t, smooth, color=color, linestyle=ls, linewidth=2, label=label)
+        ax.fill_between(
+            t,
+            np.maximum(0, smooth - std_qd),
+            smooth + std_qd,
+            alpha=0.12, color=color,
+        )
+        any_plotted = True
+
+    if not any_plotted:
+        plt.close(fig)
+        print("  [!] Skipping queue_depth_timeseries (no JSON data found)")
+        return
+
+    # Warmup boundary
+    warmup_ts = int(dfc["warmup_timesteps"].iloc[0]) if "warmup_timesteps" in dfc.columns else 200
+    ax.axvline(warmup_ts, color="black", linestyle="--", linewidth=1.2, label=f"Warmup end (t={warmup_ts})")
+
+    ax.set_xlabel("Timestep")
+    ax.set_ylabel(f"Mean queue depth (rolling {WINDOW}-ts avg)")
+    ax.set_title(
+        f"Queue Depth Over Time — ar={ar_focus}, CR={cr_max}\n"
+        "Shaded band = ±1 std across seeds"
+    )
+    ax.set_ylim(bottom=0)
+    ax.legend(loc="upper right")
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    _savefig(fig, plot_dir, "queue_depth_timeseries")
+
+
+# -----------------------------------------------------------------
 #  Orchestrator
 # -----------------------------------------------------------------
 
@@ -3339,6 +3539,8 @@ def _generate_plots_for(exp_dir: str, plot_dir: str) -> None:
     plot_allocation_time_distribution(exp_dir, df, plot_dir)  # Plot 33: violin/box (json)
     plot_compute_budget_breakdown(df, plot_dir)          # Plot 35: allocation vs path plan
     plot_step_wall_time(df, plot_dir)                    # Plot 34: per-step wall time
+    plot_energy_safety_margin(df, plot_dir)              # Plot 36: brownout gap (D3)
+    plot_queue_depth_timeseries(exp_dir, df, plot_dir)   # Plot 37: queue depth over time (D4)
 
     # ── LaTeX tables ──────────────────────────────────────────────
     generate_latex_table(df, plot_dir)
