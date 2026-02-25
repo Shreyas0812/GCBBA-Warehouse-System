@@ -100,9 +100,16 @@ class RunMetrics:
     # NOT cumulative stuck-agent-timesteps. An agent stuck for 20 timesteps = 1 event.
     num_deadlocks: int = 0
 
+    # ── Allocation call context (A4) ──
+    # Mean number of unassigned tasks present at each allocation call.
+    # Contextualises timing: a slow call with 150 tasks differs from one with 10.
+    avg_tasks_per_gcbba_call: float = 0.0
+
     # ── Agent utilization ──
     avg_idle_ratio: float = 0.0
     max_idle_ratio: float = 0.0
+    # Within-run std of per-agent idle ratios (A6): high std = uneven workload distribution.
+    std_idle_ratio: float = 0.0
     per_agent_tasks_completed: List[int] = field(default_factory=list)
     task_balance_std: float = 0.0
 
@@ -110,11 +117,15 @@ class RunMetrics:
     # Total grid steps taken across all agents (Manhattan distance, one move = 1)
     total_distance_all_agents: float = 0.0
     avg_distance_per_agent: float = 0.0
+    # Per-agent breakdown saved to metrics.json only (B2)
+    per_agent_distances: List[float] = field(default_factory=list)
 
     # ── Task duration stats ──
     avg_task_duration: float = 0.0
     max_task_duration: float = 0.0
     min_task_duration: float = 0.0
+    # Timestep when the first task completed (-1 if no tasks completed) (A7)
+    first_task_completion_timestep: int = -1
 
     # ── Communication graph topology (at t=0) ──
     initial_num_components: int = 1
@@ -124,6 +135,10 @@ class RunMetrics:
     tasks_completed_over_time: List[int] = field(default_factory=list)
     gcbba_run_timesteps: List[int] = field(default_factory=list)
     gcbba_run_durations_ms: List[float] = field(default_factory=list)
+    # A4: tasks present at each allocation call (saved to JSON only)
+    gcbba_tasks_per_run: List[int] = field(default_factory=list)
+    # B1: mean queue depth snapshot per timestep (saved to JSON only)
+    queue_depth_over_time: List[float] = field(default_factory=list)
 
     # ── Energy config (from YAML) ──
     max_energy: int = 100
@@ -144,6 +159,9 @@ class RunMetrics:
     avg_final_energy: float = 0.0
     # Lowest single-agent energy at end (energy-stress indicator)
     min_final_energy: int = 0
+    # Lowest energy any agent reached at ANY point during the run (A5).
+    # min_final_energy can miss mid-run brownout events; this captures them.
+    min_energy_ever: int = 0
     # Tasks that were dropped mid-execution because the agent had to charge
     num_tasks_aborted_for_charging: int = 0
 
@@ -206,6 +224,12 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
         # classify it in the same step() call where the trigger fires.
         self._completed_count_at_last_check = 0
 
+        # A4: task count at each allocation call
+        self._gcbba_tasks_per_run: List[int] = []
+
+        # A5: minimum energy any agent ever reached during the run
+        self._min_energy_ever: int = 100  # reset properly on first step
+
         # Path planning timing — only non-trivial calls (≥1 agent actually replanned)
         self._path_plan_times_ms: List[float] = []
 
@@ -227,6 +251,12 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
 
     def run_allocation(self) -> None:
         """Time each allocation call and record the timestep it occurred."""
+        # A4: count unassigned tasks at this moment (excludes completed + executing)
+        executing = self._get_executing_task_ids()
+        excluded  = self.completed_task_ids | executing
+        nt_active = sum(1 for tid in self.all_task_ids if tid not in excluded)
+        self._gcbba_tasks_per_run.append(nt_active)
+
         t0 = time.perf_counter()
         super().run_allocation()
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
@@ -306,6 +336,11 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
                 self._gcbba_interval_triggers += 1
 
         # ── Energy tracking ──────────────────────────────────────────────────
+        # A5: track global minimum energy across all agents and all timesteps
+        step_min_energy = min(state.energy for state in self.agent_states)
+        if step_min_energy < self._min_energy_ever:
+            self._min_energy_ever = step_min_energy
+
         for state in self.agent_states:
             aid = state.agent_id
             was_navigating = aid in navigating_before
@@ -505,13 +540,25 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
 
         m.avg_idle_ratio = round(float(np.mean(idle_ratios)), 4)
         m.max_idle_ratio = round(float(max(idle_ratios)), 4)
+        m.std_idle_ratio = round(float(np.std(idle_ratios)), 4)   # A6
         m.per_agent_tasks_completed = tasks_per_agent
         m.task_balance_std = round(float(np.std(tasks_per_agent)), 3)
 
-        # Distance traveled
-        m.total_distance_all_agents, m.avg_distance_per_agent = (
-            self._compute_distances()
-        )
+        # Distance traveled — also save per-agent breakdown (B2)
+        agent_distances = []
+        for agent_state in self.agent_states:
+            hist = agent_state.position_history
+            dist = sum(
+                abs(hist[k][0] - hist[k-1][0])
+                + abs(hist[k][1] - hist[k-1][1])
+                + abs(hist[k][2] - hist[k-1][2])
+                for k in range(1, len(hist))
+                if hist[k][:3] != hist[k-1][:3]
+            )
+            agent_distances.append(round(float(dist), 2))
+        m.total_distance_all_agents = round(sum(agent_distances), 2)
+        m.avg_distance_per_agent    = round(float(np.mean(agent_distances)) if agent_distances else 0.0, 2)
+        m.per_agent_distances       = agent_distances                        # B2
 
         # Task duration stats
         task_durations = []
@@ -524,8 +571,20 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
             m.max_task_duration = float(max(task_durations))
             m.min_task_duration = float(min(task_durations))
 
+        # A4: allocation call context
+        m.gcbba_tasks_per_run = self._gcbba_tasks_per_run
+        if self._gcbba_tasks_per_run:
+            m.avg_tasks_per_gcbba_call = round(float(np.mean(self._gcbba_tasks_per_run)), 2)
+
+        # A7: first task completion timestep
+        for t_idx, n_done in enumerate(self._tasks_completed_timeline):
+            if n_done > 0:
+                m.first_task_completion_timestep = t_idx
+                break
+
         # Time-series
         m.tasks_completed_over_time = self._tasks_completed_timeline
+        m.queue_depth_over_time     = list(self._queue_depth_snapshots)  # B1
 
         # Energy config
         m.max_energy = self.max_energy
@@ -546,6 +605,7 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
         final_energies = [state.energy for state in self.agent_states]
         m.avg_final_energy = round(float(np.mean(final_energies)), 2)
         m.min_final_energy = int(min(final_energies))
+        m.min_energy_ever  = int(self._min_energy_ever)              # A5
         m.num_tasks_aborted_for_charging = self._tasks_aborted_for_charging
 
         # Steady-state throughput metrics
@@ -867,18 +927,19 @@ SUMMARY_FIELDS = [
     "comm_range", "rerun_interval", "stuck_threshold", "num_agents",
     "num_tasks_total", "num_tasks_completed",
     "all_tasks_completed", "hit_timestep_ceiling", "makespan", "total_steps",
-    "num_gcbba_runs",
+    "num_gcbba_runs", "avg_tasks_per_gcbba_call",
     "num_gcbba_runs_batch_triggered", "num_gcbba_runs_interval_triggered",
     "total_gcbba_time_ms", "avg_gcbba_time_ms", "max_gcbba_time_ms", "std_gcbba_time_ms",
     "num_vertex_collisions", "num_edge_collisions", "num_deadlocks",
-    "avg_idle_ratio", "max_idle_ratio", "task_balance_std",
+    "avg_idle_ratio", "max_idle_ratio", "std_idle_ratio", "task_balance_std",
     "total_distance_all_agents", "avg_distance_per_agent",
     "avg_task_duration", "max_task_duration", "min_task_duration",
+    "first_task_completion_timestep",
     "initial_num_components", "initial_diameter",
     "max_energy", "charge_duration", "charge_rate", "charging_trigger_multiplier",
     "num_charging_events", "total_charging_timesteps",
     "total_navigating_to_charger_timesteps", "charging_time_fraction",
-    "avg_final_energy", "min_final_energy", "num_tasks_aborted_for_charging",
+    "avg_final_energy", "min_final_energy", "min_energy_ever", "num_tasks_aborted_for_charging",
     "total_tasks_injected", "tasks_dropped_by_queue_cap",
     "steady_state_tasks_completed", "throughput",
     "avg_task_wait_time", "max_task_wait_time",
