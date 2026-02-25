@@ -46,6 +46,16 @@ Plots generated:
       Rigorous empirical O(n^k) argument; GCBBA should show smallest k.
   28. Decentralization penalty -- (SGA_metric - method_metric) / SGA_metric vs CR
       Quantifies graceful degradation; CBBA collapses at low CR, GCBBA degrades gently.
+  29. Peak vs avg allocation time -- max_gcbba_time_ms vs avg, both modes.
+      High peak/avg ratio = high variance; bad for real-time deployment.
+  30. Queue drop rate (SS) -- tasks_dropped / tasks_injected vs arrival rate.
+      Shows overload threshold; GCBBA should stay lower (faster allocation clears queue).
+  31. Batch failure heatmap -- comm_range × tasks_per_induct completion rate grid.
+      Red cells = method failed; GCBBA should stay green across more of the space.
+  32. Throughput ramp-up curve -- rolling derivative of tasks_completed_over_time (json).
+      Shows how quickly each method reaches steady state after t=0.
+  33. Allocation time distribution -- violin + log-box from gcbba_run_durations_ms (json).
+      Full empirical spread; tight distribution = predictable real-time behaviour.
 
 Usage:
   python plot_results.py <path_to_experiment_dir>
@@ -270,6 +280,15 @@ def load_data(exp_dir: str) -> pd.DataFrame:
         ).clip(lower=0.0, upper=1.0)
     else:
         df["working_fraction"] = np.nan
+
+    # Queue drop rate: fraction of injected tasks rejected due to full queue (SS).
+    # High rate = system is overloaded; low rate = queue has headroom.
+    if "tasks_dropped_by_queue_cap" in df.columns and "total_tasks_injected" in df.columns:
+        df["tasks_drop_rate"] = (
+            df["tasks_dropped_by_queue_cap"] / df["total_tasks_injected"].replace(0, 1)
+        )
+    else:
+        df["tasks_drop_rate"] = np.nan
 
     return df
 
@@ -2593,6 +2612,449 @@ def plot_batch_allocation_scalability(df: pd.DataFrame, plot_dir: str) -> None:
 
 
 # -----------------------------------------------------------------
+#  Plot 29: Peak vs avg allocation time
+# -----------------------------------------------------------------
+
+def plot_peak_vs_avg_allocation_time(df: pd.DataFrame, plot_dir: str) -> None:
+    """
+    Compares avg_gcbba_time_ms vs max_gcbba_time_ms per method.
+
+    The worst-case allocation call sets the real-time responsiveness ceiling.
+    If peak >> avg, the algorithm has high variance (bad for real deployment).
+    GCBBA should show lower peak and lower variance than CBBA/SGA.
+
+    One subplot per mode (SS / batch). X = load axis, two lines per method (avg+peak).
+    """
+    for label_prefix, dfc, methods, x_col, x_label in [
+        ("Steady-State", _ss_clean_df(df), CANONICAL_SS_METHODS,    "task_arrival_rate", "Arrival Rate (tasks/ts/station)"),
+        ("Batch",        _batch_df(df),    CANONICAL_BATCH_METHODS,  "tasks_per_induct",  "Initial Tasks per Induct Station"),
+    ]:
+        if dfc.empty:
+            continue
+        if "max_gcbba_time_ms" not in dfc.columns or "avg_gcbba_time_ms" not in dfc.columns:
+            continue
+        methods_here = _canonical_methods_present(dfc, methods)
+
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+        # Left: avg allocation time
+        ax = axes[0]
+        for cfg in methods_here:
+            sub = dfc[dfc["config_name"] == cfg]
+            g = sub.groupby(x_col)["avg_gcbba_time_ms"].agg(["mean", "std"]).reset_index()
+            ax.errorbar(g[x_col], g["mean"], yerr=g["std"],
+                        label=get_label(cfg), color=get_color(cfg),
+                        marker="o", capsize=4, linewidth=2)
+        ax.axhline(1000, color="red", linestyle="--", linewidth=1, alpha=0.7,
+                   label="1 s threshold")
+        ax.set_xlabel(x_label)
+        ax.set_ylabel("Avg Allocation Time (ms)")
+        ax.set_title(f"Average Allocation Time ({label_prefix})")
+        ax.legend(fontsize=9)
+        ax.grid(alpha=0.3)
+        ax.set_ylim(bottom=0)
+
+        # Right: peak (max) allocation time
+        ax = axes[1]
+        for cfg in methods_here:
+            sub = dfc[dfc["config_name"] == cfg]
+            g = sub.groupby(x_col)["max_gcbba_time_ms"].agg(["mean", "std"]).reset_index()
+            ax.errorbar(g[x_col], g["mean"], yerr=g["std"],
+                        label=get_label(cfg), color=get_color(cfg),
+                        marker="s", capsize=4, linewidth=2, linestyle="--")
+        ax.axhline(1000, color="red", linestyle="--", linewidth=1, alpha=0.7,
+                   label="1 s threshold")
+        ax.set_xlabel(x_label)
+        ax.set_ylabel("Peak Allocation Time (ms)")
+        ax.set_title(f"Worst-Case (Peak) Allocation Time ({label_prefix})")
+        ax.legend(fontsize=9)
+        ax.grid(alpha=0.3)
+        ax.set_ylim(bottom=0)
+
+        fig.suptitle(
+            f"Allocation Time: Average vs Peak ({label_prefix})\n"
+            "(Peak >> Avg indicates high variance — bad for real-time deployment)",
+            fontsize=13, y=1.03,
+        )
+        fig.tight_layout()
+        suffix = "ss" if label_prefix == "Steady-State" else "batch"
+        _savefig(fig, plot_dir, f"peak_vs_avg_allocation_time_{suffix}")
+
+
+# -----------------------------------------------------------------
+#  Plot 30: Queue drop rate (steady-state)
+# -----------------------------------------------------------------
+
+def plot_queue_drop_rate(df: pd.DataFrame, plot_dir: str) -> None:
+    """
+    Fraction of injected tasks rejected due to full queue vs arrival rate.
+
+    At low arrival rates, drop rate should be ~0 (queue has headroom).
+    At high rates, CBBA/SGA may drop more if allocation is slow and queue fills.
+    GCBBA should maintain low drop rate even at high loads (faster allocation).
+
+    Uses SS_PRIMARY_ARRIVAL_RATES for uniform method coverage.
+    """
+    dfc = _ss_clean_df(df)
+    if dfc.empty or "tasks_drop_rate" not in dfc.columns:
+        print("  [!] Skipping queue_drop_rate (no SS data or tasks_drop_rate missing)")
+        return
+
+    methods_here = _canonical_methods_present(dfc, CANONICAL_SS_METHODS)
+    comm_ranges = sorted(dfc["comm_range"].unique())
+
+    # Show low / mid / high CR
+    cr_low  = min(comm_ranges)
+    cr_high = max(comm_ranges)
+    cr_mid  = comm_ranges[len(comm_ranges) // 2]
+    show_crs = sorted(set([cr_low, cr_mid, cr_high]))
+
+    fig, axes = plt.subplots(1, len(show_crs), figsize=(5 * len(show_crs), 5), sharey=False)
+    if len(show_crs) == 1:
+        axes = [axes]
+
+    for ax_idx, cr in enumerate(show_crs):
+        ax = axes[ax_idx]
+        df_cr = dfc[dfc["comm_range"] == cr]
+
+        for cfg in methods_here:
+            sub = df_cr[df_cr["config_name"] == cfg]
+            g = (sub.groupby("task_arrival_rate")["tasks_drop_rate"]
+                 .agg(["mean", "std"]).reset_index())
+            g["mean_pct"] = g["mean"] * 100
+            g["std_pct"]  = g["std"]  * 100
+            ax.errorbar(g["task_arrival_rate"], g["mean_pct"], yerr=g["std_pct"],
+                        label=get_label(cfg), color=get_color(cfg),
+                        marker="o", capsize=4, linewidth=2)
+
+        conn_str = "Disconnected" if cr < CONNECTIVITY_THRESHOLD else "Well Connected"
+        ax.set_xlabel("Arrival Rate (tasks/ts/station)")
+        ax.set_ylabel("Queue Drop Rate (%)")
+        ax.set_title(f"cr={int(cr)} ({conn_str})")
+        ax.legend(fontsize=9)
+        ax.grid(alpha=0.3)
+        ax.set_ylim(bottom=0)
+
+    fig.suptitle(
+        "Task Queue Drop Rate vs Arrival Rate (Steady-State)\n"
+        "(Higher drop rate = allocation too slow to clear queue; GCBBA should be lowest)",
+        fontsize=13, y=1.03,
+    )
+    fig.tight_layout()
+    _savefig(fig, plot_dir, "queue_drop_rate_ss")
+
+
+# -----------------------------------------------------------------
+#  Plot 31: Batch failure heatmap (completion rate grid)
+# -----------------------------------------------------------------
+
+def plot_batch_failure_heatmap(df: pd.DataFrame, plot_dir: str) -> None:
+    """
+    2D heatmap: comm_range (Y) × tasks_per_induct (X) → mean completion rate.
+    One subplot per canonical batch method.
+
+    Red cells = method failed to complete all tasks at that (cr, tpi) combination.
+    Shows GCBBA's robustness across the load × connectivity parameter space.
+    """
+    dfc = _batch_df(df)
+    if dfc.empty or "all_tasks_completed" not in dfc.columns:
+        print("  [!] Skipping batch_failure_heatmap (no batch runs)")
+        return
+
+    methods_here = _canonical_methods_present(dfc, CANONICAL_BATCH_METHODS)
+    task_counts   = sorted(dfc["tasks_per_induct"].unique())
+    comm_ranges   = sorted(dfc["comm_range"].unique(), reverse=True)  # high CR at top
+
+    n_methods = len(methods_here)
+    fig, axes = plt.subplots(1, n_methods, figsize=(4 * n_methods, 5), sharey=True)
+    if n_methods == 1:
+        axes = [axes]
+
+    import matplotlib.colors as mcolors
+    cmap = mcolors.LinearSegmentedColormap.from_list(
+        "completion", ["#d62728", "#f5f5f5", "#2ca02c"], N=256
+    )
+
+    for ax_idx, cfg in enumerate(methods_here):
+        ax = axes[ax_idx]
+        sub = dfc[dfc["config_name"] == cfg]
+
+        # Build 2D grid
+        grid = np.full((len(comm_ranges), len(task_counts)), np.nan)
+        for ci, cr in enumerate(comm_ranges):
+            for ti, tpi in enumerate(task_counts):
+                vals = sub[
+                    (sub["comm_range"] == cr) & (sub["tasks_per_induct"] == tpi)
+                ]["all_tasks_completed"]
+                if not vals.empty:
+                    grid[ci, ti] = float(vals.mean())
+
+        im = ax.imshow(grid, cmap=cmap, vmin=0, vmax=1,
+                       aspect="auto", interpolation="nearest")
+
+        # Annotate cells
+        for ci in range(len(comm_ranges)):
+            for ti in range(len(task_counts)):
+                val = grid[ci, ti]
+                if not np.isnan(val):
+                    ax.text(ti, ci, f"{val:.0%}",
+                            ha="center", va="center", fontsize=9,
+                            color="black" if 0.3 < val < 0.85 else "white")
+
+        ax.set_xticks(range(len(task_counts)))
+        ax.set_xticklabels([str(t) for t in task_counts])
+        ax.set_yticks(range(len(comm_ranges)))
+        ax.set_yticklabels([str(int(cr)) for cr in comm_ranges])
+        ax.set_xlabel("Tasks per Induct Station")
+        if ax_idx == 0:
+            ax.set_ylabel("Communication Range")
+        short = cfg.replace("_batch", "")
+        ax.set_title(f"{get_label(cfg).split('(')[0].strip()}\n({short})")
+
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04).set_label("Completion Rate")
+
+    fig.suptitle(
+        "Batch Task Completion Rate: Load × Connectivity Heatmap\n"
+        "(Green=100% success; Red=failure; GCBBA should stay green across more cells)",
+        fontsize=13, y=1.03,
+    )
+    fig.tight_layout()
+    _savefig(fig, plot_dir, "batch_failure_heatmap")
+
+
+# -----------------------------------------------------------------
+#  Plot 32: Throughput ramp-up curve (from tasks_completed_over_time)
+# -----------------------------------------------------------------
+
+def plot_throughput_rampup(exp_dir: str, df: pd.DataFrame, plot_dir: str) -> None:
+    """
+    Reads tasks_completed_over_time from individual metrics.json files and plots
+    the rolling instantaneous throughput (derivative) over time.
+
+    Shows how quickly each method reaches steady-state throughput after t=0.
+    Methods that ramp up faster are better for dynamic workloads.
+
+    Averages across seeds at the median arrival rate and highest CR (best case).
+    Uses a rolling window to smooth the derivative.
+    """
+    dfc = _ss_clean_df(df)
+    if dfc.empty:
+        print("  [!] Skipping throughput_rampup (no SS data)")
+        return
+
+    ar_vals = sorted(dfc["task_arrival_rate"].unique())
+    ar_focus = ar_vals[len(ar_vals) // 2]  # median arrival rate
+    cr_max   = int(dfc["comm_range"].max())
+    methods_here = _canonical_methods_present(dfc, CANONICAL_SS_METHODS)
+
+    WINDOW = 20  # rolling window for smoothed derivative (timesteps)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    any_plotted = False
+
+    for cfg in methods_here:
+        subset = dfc[
+            (dfc["config_name"] == cfg)
+            & (dfc["task_arrival_rate"] == ar_focus)
+            & (dfc["comm_range"] == cr_max)
+        ]
+        if subset.empty:
+            continue
+
+        all_curves = []
+        max_len = 0
+        for _, row in subset.iterrows():
+            run_id = row.get("run_id", "")
+            # Walk the experiment dir for this run's metrics.json
+            json_path = None
+            for root, _, files in os.walk(exp_dir):
+                if "metrics.json" in files and os.path.basename(root) == run_id:
+                    json_path = os.path.join(root, "metrics.json")
+                    break
+            if json_path is None:
+                continue
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    m = json.load(f)
+                cot = m.get("tasks_completed_over_time", [])
+                if len(cot) < 2:
+                    continue
+                cot_arr = np.array(cot, dtype=float)
+                all_curves.append(cot_arr)
+                max_len = max(max_len, len(cot_arr))
+            except Exception:
+                continue
+
+        if not all_curves:
+            continue
+
+        # Pad shorter curves with their final value, then average
+        padded = np.array([
+            np.pad(c, (0, max_len - len(c)), mode="edge") for c in all_curves
+        ])
+        mean_cot = padded.mean(axis=0)
+
+        # Rolling derivative → instantaneous throughput
+        t = np.arange(len(mean_cot))
+        half_w = WINDOW // 2
+        inst_tp = np.zeros(len(mean_cot))
+        for i in range(len(mean_cot)):
+            lo = max(0, i - half_w)
+            hi = min(len(mean_cot) - 1, i + half_w)
+            if hi > lo:
+                inst_tp[i] = (mean_cot[hi] - mean_cot[lo]) / (hi - lo)
+
+        ax.plot(t, inst_tp, label=get_label(cfg), color=get_color(cfg), linewidth=2)
+        any_plotted = True
+
+    if not any_plotted:
+        print("  [!] Skipping throughput_rampup (no metrics.json found)")
+        plt.close(fig)
+        return
+
+    # Theoretical maximum throughput for reference
+    n_stations = 8
+    ax.axhline(ar_focus * n_stations, color="black", linestyle="--",
+               linewidth=1.2, alpha=0.6, label=f"Max possible ({n_stations} stations)")
+
+    ax.set_xlabel("Timestep")
+    ax.set_ylabel(f"Instantaneous Throughput (tasks/ts, {WINDOW}-step rolling avg)")
+    ax.set_title(
+        f"Throughput Ramp-Up Curve (SS, ar={ar_focus}, cr={cr_max})\n"
+        f"(Faster rise = faster convergence to steady state; {len(methods_here)} methods shown)"
+    )
+    ax.legend(fontsize=9)
+    ax.grid(alpha=0.3)
+    ax.set_ylim(bottom=0)
+    fig.tight_layout()
+    _savefig(fig, plot_dir, "throughput_rampup_ss")
+
+
+# -----------------------------------------------------------------
+#  Plot 33: Allocation time distribution (violin/box from metrics.json)
+# -----------------------------------------------------------------
+
+def plot_allocation_time_distribution(exp_dir: str, df: pd.DataFrame, plot_dir: str) -> None:
+    """
+    Reads gcbba_run_durations_ms from individual metrics.json files to build
+    the full empirical distribution of per-call allocation times per method.
+
+    A violin/box plot shows not just mean/max but the full spread:
+    - Heavy right tail = occasional expensive calls (bad for real-time).
+    - GCBBA should have a tighter distribution than CBBA/SGA.
+
+    Uses fully connected CR and primary arrival rates for SS.
+    Also generates a batch version using fully connected CR.
+    """
+    for label_prefix, dfc, methods, filter_col, filter_val in [
+        ("Steady-State", _ss_clean_df(df),  CANONICAL_SS_METHODS,    "task_arrival_rate",
+         sorted(_ss_clean_df(df)["task_arrival_rate"].unique())[len(sorted(_ss_clean_df(df)["task_arrival_rate"].unique()))//2]
+         if not _ss_clean_df(df).empty else None),
+        ("Batch",        _batch_df(df),      CANONICAL_BATCH_METHODS,  "tasks_per_induct",
+         sorted(_batch_df(df)["tasks_per_induct"].unique())[-1]
+         if not _batch_df(df).empty else None),
+    ]:
+        if dfc.empty or filter_val is None:
+            continue
+
+        cr_max = int(dfc["comm_range"].max())
+        methods_here = _canonical_methods_present(dfc, methods)
+
+        distributions = {cfg: [] for cfg in methods_here}
+
+        for cfg in methods_here:
+            subset = dfc[
+                (dfc["config_name"] == cfg)
+                & (dfc[filter_col] == filter_val)
+                & (dfc["comm_range"] == cr_max)
+            ]
+            for _, row in subset.iterrows():
+                run_id = row.get("run_id", "")
+                json_path = None
+                for root, dirs, files in os.walk(exp_dir):
+                    if "metrics.json" in files and os.path.basename(root) == run_id:
+                        json_path = os.path.join(root, "metrics.json")
+                        break
+                if json_path is None:
+                    continue
+                try:
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        m = json.load(f)
+                    durations = m.get("gcbba_run_durations_ms", [])
+                    distributions[cfg].extend(durations)
+                except Exception:
+                    continue
+
+        # Keep only methods with data
+        valid = {cfg: v for cfg, v in distributions.items() if len(v) > 0}
+        if not valid:
+            print(f"  [!] Skipping allocation_time_distribution_{label_prefix.lower().replace(' ','')} (no json data)")
+            continue
+
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+        # Left: violin plot
+        ax = axes[0]
+        positions = list(range(1, len(valid) + 1))
+        parts = ax.violinplot(
+            [valid[cfg] for cfg in valid],
+            positions=positions,
+            showmedians=True, showextrema=True,
+        )
+        for body, cfg in zip(parts["bodies"], valid.keys()):
+            body.set_facecolor(get_color(cfg))
+            body.set_alpha(0.7)
+        ax.axhline(1000, color="red", linestyle="--", linewidth=1, alpha=0.7,
+                   label="1 s threshold")
+        ax.set_xticks(positions)
+        ax.set_xticklabels(
+            [get_label(cfg).split("(")[0].strip() for cfg in valid],
+            rotation=15, ha="right", fontsize=9
+        )
+        ax.set_ylabel("Allocation Call Duration (ms)")
+        ax.set_title(f"Distribution of Allocation Durations ({label_prefix})\n(violin; median line shown)")
+        ax.legend(fontsize=9)
+        ax.grid(axis="y", alpha=0.3)
+        ax.set_ylim(bottom=0)
+
+        # Right: log-scale box plot (shows outliers / tail better)
+        ax = axes[1]
+        bp = ax.boxplot(
+            [valid[cfg] for cfg in valid],
+            positions=positions,
+            patch_artist=True,
+            medianprops={"color": "black", "linewidth": 2},
+            showfliers=True,
+            flierprops={"marker": ".", "markersize": 3, "alpha": 0.4},
+        )
+        for patch, cfg in zip(bp["boxes"], valid.keys()):
+            patch.set_facecolor(get_color(cfg))
+            patch.set_alpha(0.7)
+        ax.axhline(1000, color="red", linestyle="--", linewidth=1, alpha=0.7,
+                   label="1 s threshold")
+        ax.set_yscale("log")
+        ax.set_xticks(positions)
+        ax.set_xticklabels(
+            [get_label(cfg).split("(")[0].strip() for cfg in valid],
+            rotation=15, ha="right", fontsize=9
+        )
+        ax.set_ylabel("Allocation Call Duration (ms, log scale)")
+        ax.set_title(f"Allocation Duration Tail Behaviour ({label_prefix})\n(log scale; outliers shown)")
+        ax.legend(fontsize=9)
+        ax.grid(axis="y", alpha=0.3, which="both")
+
+        load_str = f"{filter_col}={filter_val}, cr={cr_max}"
+        fig.suptitle(
+            f"Allocation Time Distribution — {label_prefix} ({load_str})\n"
+            "(Tighter distribution + lower tail = more predictable real-time behaviour)",
+            fontsize=12, y=1.03,
+        )
+        fig.tight_layout()
+        suffix = "ss" if label_prefix == "Steady-State" else "batch"
+        _savefig(fig, plot_dir, f"allocation_time_distribution_{suffix}")
+
+
+# -----------------------------------------------------------------
 #  Orchestrator
 # -----------------------------------------------------------------
 
@@ -2641,6 +3103,11 @@ def _generate_plots_for(exp_dir: str, plot_dir: str) -> None:
     plot_agent_time_breakdown(df, plot_dir)      # working / idle / charging stacked bar
     plot_scaling_exponent(df, plot_dir)          # power-law fit, annotated k values
     plot_decentralization_penalty(df, plot_dir)  # (sga - method) / sga vs comm_range
+    plot_peak_vs_avg_allocation_time(df, plot_dir)       # Plot 29: peak vs avg timing
+    plot_queue_drop_rate(df, plot_dir)                   # Plot 30: queue drop rate (SS)
+    plot_batch_failure_heatmap(df, plot_dir)             # Plot 31: cr×tpi heatmap
+    plot_throughput_rampup(exp_dir, df, plot_dir)        # Plot 32: ramp-up curve (json)
+    plot_allocation_time_distribution(exp_dir, df, plot_dir)  # Plot 33: violin/box (json)
 
     # ── LaTeX tables ──────────────────────────────────────────────
     generate_latex_table(df, plot_dir)
