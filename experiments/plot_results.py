@@ -58,6 +58,8 @@ Plots generated:
       Full empirical spread; tight distribution = predictable real-time behaviour.
   34. Per-timestep wall time -- avg_step_time_ms / max_step_time_ms per method vs load.
       Real-time feasibility: if avg < 1 s/tick the system can run at 1 Hz in deployment.
+  35. Computational budget breakdown -- stacked bar: allocation time + path planning time.
+      Shows what fraction of total compute is allocation vs A* path planning per method.
 
 Usage:
   python plot_results.py <path_to_experiment_dir>
@@ -3057,6 +3059,119 @@ def plot_allocation_time_distribution(exp_dir: str, df: pd.DataFrame, plot_dir: 
 
 
 # -----------------------------------------------------------------
+#  Plot 35: Computational budget breakdown (allocation vs path planning)
+# -----------------------------------------------------------------
+
+def plot_compute_budget_breakdown(df: pd.DataFrame, plot_dir: str) -> None:
+    """
+    Stacked bar chart: total_gcbba_time_ms (allocation) vs total_path_plan_time_ms
+    (A* / BFS path planning) per method, grouped by load.
+
+    Shows where wall time actually goes — crucial for the real-time feasibility
+    argument.  If GCBBA's allocation dominates, optimising A* won't help much,
+    and vice versa.  GCBBA should show a different allocation/planning ratio than
+    CBBA because it reallocates more often but with fewer tasks each time.
+
+    Secondary panel: avg_path_plan_time_ms vs avg_gcbba_time_ms as a scatter,
+    one point per (method, load) combination — reveals per-call cost differences.
+    """
+    required = {"total_gcbba_time_ms", "total_path_plan_time_ms"}
+    if not required.issubset(df.columns):
+        print("  [!] Skipping compute_budget_breakdown (path plan columns not in data — re-run experiments)")
+        return
+
+    for label_prefix, dfc, methods, x_col, x_label in [
+        ("Steady-State", _ss_clean_df(df), CANONICAL_SS_METHODS,    "task_arrival_rate", "Arrival Rate (tasks/ts/station)"),
+        ("Batch",        _batch_df(df),    CANONICAL_BATCH_METHODS,  "tasks_per_induct",  "Initial Tasks per Induct Station"),
+    ]:
+        if dfc.empty:
+            continue
+        methods_here = _canonical_methods_present(dfc, methods)
+        x_vals = sorted(dfc[x_col].unique())
+        x = np.arange(len(x_vals))
+        width = 0.8 / max(len(methods_here), 1)
+
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+        # ── Left: stacked bar (total ms per run) ─────────────────────
+        ax = axes[0]
+        for i, cfg in enumerate(methods_here):
+            sub = dfc[dfc["config_name"] == cfg]
+            alloc_means, plan_means = [], []
+            for xv in x_vals:
+                rows = sub[sub[x_col] == xv]
+                alloc_means.append(rows["total_gcbba_time_ms"].mean() if not rows.empty else 0)
+                plan_means.append(rows["total_path_plan_time_ms"].mean() if not rows.empty else 0)
+
+            offset = (i - (len(methods_here) - 1) / 2) * width
+            color = get_color(cfg)
+            ax.bar(x + offset, alloc_means, width,
+                   label=f"{get_label(cfg)} — alloc",
+                   color=color, alpha=0.9, edgecolor="black", linewidth=0.4)
+            ax.bar(x + offset, plan_means, width,
+                   bottom=alloc_means,
+                   label=f"{get_label(cfg)} — A*",
+                   color=color, alpha=0.45, edgecolor="black", linewidth=0.4,
+                   hatch="///")
+
+        ax.set_xlabel(x_label)
+        ax.set_ylabel("Total Time (ms, mean per run)")
+        ax.set_title(f"Allocation + Path Planning Budget ({label_prefix})\n"
+                     "(solid = allocation; hatched = A* path planning)")
+        ax.set_xticks(x)
+        ax.set_xticklabels([str(xv) for xv in x_vals])
+        ax.legend(fontsize=7, ncol=2)
+        ax.grid(axis="y", alpha=0.3)
+        ax.set_ylim(bottom=0)
+
+        # ── Right: per-call cost scatter ──────────────────────────────
+        ax = axes[1]
+        markers = ["o", "s", "^", "D"]
+        for i, cfg in enumerate(methods_here):
+            sub = dfc[dfc["config_name"] == cfg]
+            g = (sub.groupby(x_col)[["avg_gcbba_time_ms", "avg_path_plan_time_ms"]]
+                 .mean().reset_index())
+            if g.empty or g["avg_gcbba_time_ms"].isna().all():
+                continue
+            ax.scatter(
+                g["avg_gcbba_time_ms"], g["avg_path_plan_time_ms"],
+                color=get_color(cfg), marker=markers[i % len(markers)],
+                s=80, zorder=5, edgecolors="black", linewidth=0.5,
+                label=get_label(cfg),
+            )
+            # Annotate with load value
+            for _, row in g.iterrows():
+                ax.annotate(
+                    str(row[x_col]),
+                    (row["avg_gcbba_time_ms"], row["avg_path_plan_time_ms"]),
+                    fontsize=7, ha="left", va="bottom",
+                    xytext=(3, 3), textcoords="offset points", color=get_color(cfg),
+                )
+
+        # Diagonal: equal allocation and planning time
+        lim_max = max(ax.get_xlim()[1], ax.get_ylim()[1]) if ax.get_xlim()[1] > 0 else 1000
+        diag = [0, lim_max]
+        ax.plot(diag, diag, "k--", linewidth=1, alpha=0.4, label="allocation = planning")
+        ax.set_xlabel("Avg Allocation Time per Call (ms)")
+        ax.set_ylabel("Avg Path Planning Time per Event (ms)")
+        ax.set_title(f"Per-Call Cost: Allocation vs Path Planning ({label_prefix})\n"
+                     "(points annotated with load value; dashed = equal cost)")
+        ax.legend(fontsize=9)
+        ax.grid(alpha=0.3)
+        ax.set_xlim(left=0)
+        ax.set_ylim(bottom=0)
+
+        fig.suptitle(
+            f"Computational Budget: Allocation vs A* Path Planning ({label_prefix})\n"
+            "(Understanding where wall time goes informs real-time deployment decisions)",
+            fontsize=12, y=1.03,
+        )
+        fig.tight_layout()
+        suffix = "ss" if label_prefix == "Steady-State" else "batch"
+        _savefig(fig, plot_dir, f"compute_budget_breakdown_{suffix}")
+
+
+# -----------------------------------------------------------------
 #  Plot 34: Per-timestep wall time (real-time feasibility)
 # -----------------------------------------------------------------
 
@@ -3193,6 +3308,7 @@ def _generate_plots_for(exp_dir: str, plot_dir: str) -> None:
     plot_batch_failure_heatmap(df, plot_dir)             # Plot 31: cr×tpi heatmap
     plot_throughput_rampup(exp_dir, df, plot_dir)        # Plot 32: ramp-up curve (json)
     plot_allocation_time_distribution(exp_dir, df, plot_dir)  # Plot 33: violin/box (json)
+    plot_compute_budget_breakdown(df, plot_dir)          # Plot 35: allocation vs path plan
     plot_step_wall_time(df, plot_dir)                    # Plot 34: per-step wall time
 
     # ── LaTeX tables ──────────────────────────────────────────────

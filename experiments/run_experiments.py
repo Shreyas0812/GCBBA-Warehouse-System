@@ -154,6 +154,14 @@ class RunMetrics:
     avg_queue_depth: float = 0.0         # mean across stations over full run
     queue_saturation_fraction: float = 0.0  # fraction of timesteps any station at max depth
 
+    # ── Path planning timing ──
+    # Counts only non-trivial _plan_paths() calls (≥1 agent actually replanned).
+    # avg/max are over those calls only; total_path_plan_time_ms sums all of them.
+    num_replanning_events: int = 0
+    total_path_plan_time_ms: float = 0.0
+    avg_path_plan_time_ms: float = 0.0
+    max_path_plan_time_ms: float = 0.0
+
     # ── Wall-clock timing ──
     wall_time_seconds: float = 0.0
     # Per-timestep simulation step time (measures real-time feasibility).
@@ -195,6 +203,9 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
         # classify it in the same step() call where the trigger fires.
         self._completed_count_at_last_check = 0
 
+        # Path planning timing — only non-trivial calls (≥1 agent actually replanned)
+        self._path_plan_times_ms: List[float] = []
+
         # Per-timestep wall time (covers allocation + path planning + state updates)
         self._step_times_ms: List[float] = []
 
@@ -219,6 +230,20 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
         self._gcbba_run_count += 1
         self._gcbba_times_ms.append(elapsed_ms)
         self._gcbba_timesteps.append(self.current_timestep)
+
+    def _plan_paths(self) -> None:
+        """Time path planning, but only for calls that do real work (≥1 agent replanning).
+
+        Skips timing trivial calls (all agents have paths already) so the stats
+        reflect actual A* / BFS cost rather than being diluted by thousands of
+        no-op calls.  Replanning events = distinct batches of path computation.
+        """
+        if not any(a.needs_new_path for a in self.agent_states):
+            super()._plan_paths()
+            return
+        t0 = time.perf_counter()
+        super()._plan_paths()
+        self._path_plan_times_ms.append((time.perf_counter() - t0) * 1000.0)
 
     def step(self, *args, **kwargs):
         """
@@ -558,6 +583,13 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
                 sat_count / len(self._queue_depth_snapshots), 4
             )
 
+        # Path planning timing
+        m.num_replanning_events = len(self._path_plan_times_ms)
+        if self._path_plan_times_ms:
+            m.total_path_plan_time_ms = round(sum(self._path_plan_times_ms), 2)
+            m.avg_path_plan_time_ms   = round(float(np.mean(self._path_plan_times_ms)), 2)
+            m.max_path_plan_time_ms   = round(float(max(self._path_plan_times_ms)), 2)
+
         # Per-timestep step time
         if self._step_times_ms:
             m.avg_step_time_ms = round(float(np.mean(self._step_times_ms)), 3)
@@ -845,6 +877,8 @@ SUMMARY_FIELDS = [
     "steady_state_tasks_completed", "throughput",
     "avg_task_wait_time", "max_task_wait_time",
     "avg_queue_depth", "queue_saturation_fraction",
+    "num_replanning_events",
+    "total_path_plan_time_ms", "avg_path_plan_time_ms", "max_path_plan_time_ms",
     "wall_time_seconds",
     "avg_step_time_ms", "max_step_time_ms", "std_step_time_ms",
 ]
