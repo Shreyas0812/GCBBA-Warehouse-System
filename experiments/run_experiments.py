@@ -351,7 +351,6 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
                         f"[t={self.current_timestep}] WALL-CLOCK LIMIT "
                         f"({self._wall_time_limit_s / 60:.0f} min) exceeded "
                         f"({elapsed / 60:.1f} min elapsed) — stopping early.",
-                        flush=True,
                     )
                     break
             self.step()
