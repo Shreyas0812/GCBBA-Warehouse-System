@@ -83,6 +83,9 @@ class RunMetrics:
     total_gcbba_time_ms: float = 0.0
     avg_gcbba_time_ms: float = 0.0
     max_gcbba_time_ms: float = 0.0
+    # Within-run call-to-call variability (std of individual durations).
+    # Low std_gcbba_time_ms → predictable per-call cost → easier real-time guarantees.
+    std_gcbba_time_ms: float = 0.0
 
     # ── NEW: Rerun trigger breakdown ──
     # Counts runs triggered because enough tasks completed (batch threshold crossed)
@@ -465,6 +468,9 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
         )
         m.max_gcbba_time_ms = (
             round(max(self._gcbba_times_ms), 2) if self._gcbba_times_ms else 0
+        )
+        m.std_gcbba_time_ms = (
+            round(float(np.std(self._gcbba_times_ms)), 2) if self._gcbba_times_ms else 0
         )
         m.gcbba_run_timesteps = self._gcbba_timesteps
         m.gcbba_run_durations_ms = [round(t, 2) for t in self._gcbba_times_ms]
@@ -863,7 +869,7 @@ SUMMARY_FIELDS = [
     "all_tasks_completed", "hit_timestep_ceiling", "makespan", "total_steps",
     "num_gcbba_runs",
     "num_gcbba_runs_batch_triggered", "num_gcbba_runs_interval_triggered",
-    "total_gcbba_time_ms", "avg_gcbba_time_ms", "max_gcbba_time_ms",
+    "total_gcbba_time_ms", "avg_gcbba_time_ms", "max_gcbba_time_ms", "std_gcbba_time_ms",
     "num_vertex_collisions", "num_edge_collisions", "num_deadlocks",
     "avg_idle_ratio", "max_idle_ratio", "task_balance_std",
     "total_distance_all_agents", "avg_distance_per_agent",

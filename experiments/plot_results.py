@@ -46,8 +46,8 @@ Plots generated:
       Rigorous empirical O(n^k) argument; GCBBA should show smallest k.
   28. Decentralization penalty -- (SGA_metric - method_metric) / SGA_metric vs CR
       Quantifies graceful degradation; CBBA collapses at low CR, GCBBA degrades gently.
-  29. Peak vs avg allocation time -- max_gcbba_time_ms vs avg, both modes.
-      High peak/avg ratio = high variance; bad for real-time deployment.
+  29. Peak vs avg allocation time + CV -- max/avg/std_gcbba_time_ms, both modes.
+      Three panels: avg, peak, and CV (std/mean×100%). Low CV = predictable latency.
   30. Queue drop rate (SS) -- tasks_dropped / tasks_injected vs arrival rate.
       Shows overload threshold; GCBBA should stay lower (faster allocation clears queue).
   31. Batch failure heatmap -- comm_range × tasks_per_induct completion rate grid.
@@ -2621,13 +2621,17 @@ def plot_batch_allocation_scalability(df: pd.DataFrame, plot_dir: str) -> None:
 
 def plot_peak_vs_avg_allocation_time(df: pd.DataFrame, plot_dir: str) -> None:
     """
-    Compares avg_gcbba_time_ms vs max_gcbba_time_ms per method.
+    Three-panel figure per mode (SS / batch):
+      Left:   avg_gcbba_time_ms vs load (mean across seeds ± std across seeds)
+      Centre: max_gcbba_time_ms vs load (worst-case latency per run)
+      Right:  Coefficient of Variation (CV = std_gcbba_time_ms / avg_gcbba_time_ms × 100%)
+              CV measures within-run call-to-call variability (A3 metric).
+              Low CV → consistent, predictable per-call cost → better real-time guarantees.
+              High CV → bursty: some calls are much slower than the mean.
 
-    The worst-case allocation call sets the real-time responsiveness ceiling.
-    If peak >> avg, the algorithm has high variance (bad for real deployment).
-    GCBBA should show lower peak and lower variance than CBBA/SGA.
-
-    One subplot per mode (SS / batch). X = load axis, two lines per method (avg+peak).
+    std_gcbba_time_ms is the within-run std of individual call durations (recorded
+    per run), which is different from the across-seed std shown as error bars in
+    the left and centre panels.
     """
     for label_prefix, dfc, methods, x_col, x_label in [
         ("Steady-State", _ss_clean_df(df), CANONICAL_SS_METHODS,    "task_arrival_rate", "Arrival Rate (tasks/ts/station)"),
@@ -2638,10 +2642,11 @@ def plot_peak_vs_avg_allocation_time(df: pd.DataFrame, plot_dir: str) -> None:
         if "max_gcbba_time_ms" not in dfc.columns or "avg_gcbba_time_ms" not in dfc.columns:
             continue
         methods_here = _canonical_methods_present(dfc, methods)
+        has_std = "std_gcbba_time_ms" in dfc.columns
 
-        fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 
-        # Left: avg allocation time
+        # Left: avg allocation time (across-seed error bars)
         ax = axes[0]
         for cfg in methods_here:
             sub = dfc[dfc["config_name"] == cfg]
@@ -2658,7 +2663,7 @@ def plot_peak_vs_avg_allocation_time(df: pd.DataFrame, plot_dir: str) -> None:
         ax.grid(alpha=0.3)
         ax.set_ylim(bottom=0)
 
-        # Right: peak (max) allocation time
+        # Centre: peak (max) allocation time
         ax = axes[1]
         for cfg in methods_here:
             sub = dfc[dfc["config_name"] == cfg]
@@ -2675,9 +2680,33 @@ def plot_peak_vs_avg_allocation_time(df: pd.DataFrame, plot_dir: str) -> None:
         ax.grid(alpha=0.3)
         ax.set_ylim(bottom=0)
 
+        # Right: Coefficient of Variation (within-run call-to-call variability)
+        ax = axes[2]
+        if has_std:
+            for cfg in methods_here:
+                sub = dfc[dfc["config_name"] == cfg]
+                g = sub.groupby(x_col)[["avg_gcbba_time_ms", "std_gcbba_time_ms"]].mean().reset_index()
+                # CV = within-run std / within-run mean × 100 (both averaged across seeds first)
+                cv = (g["std_gcbba_time_ms"] / g["avg_gcbba_time_ms"].replace(0, np.nan) * 100).fillna(0)
+                ax.plot(g[x_col], cv,
+                        label=get_label(cfg), color=get_color(cfg),
+                        marker="^", linewidth=2, linestyle=":")
+            ax.axhline(100, color="gray", linestyle="--", linewidth=1.2, alpha=0.7,
+                       label="CV = 100% (std = mean)")
+        else:
+            ax.text(0.5, 0.5, "std_gcbba_time_ms not in data\n(re-run experiments)",
+                    ha="center", va="center", transform=ax.transAxes, fontsize=10, color="gray")
+        ax.set_xlabel(x_label)
+        ax.set_ylabel("CV = std / mean × 100 (%)")
+        ax.set_title(f"Call-to-Call Variability ({label_prefix})\n"
+                     "(low CV = consistent; high CV = bursty — bad for real-time)")
+        ax.legend(fontsize=9)
+        ax.grid(alpha=0.3)
+        ax.set_ylim(bottom=0)
+
         fig.suptitle(
-            f"Allocation Time: Average vs Peak ({label_prefix})\n"
-            "(Peak >> Avg indicates high variance — bad for real-time deployment)",
+            f"Allocation Time: Average · Peak · Variability ({label_prefix})\n"
+            "(Peak >> Avg or high CV → unpredictable latency, harder to deploy in real time)",
             fontsize=13, y=1.03,
         )
         fig.tight_layout()
