@@ -76,6 +76,7 @@ class RunMetrics:
     total_steps: int = 0
     all_tasks_completed: bool = False
     hit_timestep_ceiling: bool = False
+    hit_wall_clock_ceiling: bool = False   # C3: run stopped by wall-clock cap before max_timesteps
     num_tasks_total: int = 0
     num_tasks_completed: int = 0
 
@@ -205,10 +206,16 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
     def __init__(self, *args, **kwargs):
         # C1: pop before passing to super so IntegrationOrchestrator doesn't see it
         self._allocation_timeout_s: Optional[float] = kwargs.pop("allocation_timeout_s", None)
+        # C3: per-run wall-clock cap
+        self._wall_time_limit_s: Optional[float] = kwargs.pop("wall_clock_limit_s", None)
         super().__init__(*args, **kwargs)
 
         # C1: count allocation calls that hit the timeout
         self._num_allocation_timeouts: int = 0
+
+        # C3: wall-clock cap state (start time set at beginning of run_simulation)
+        self._run_wall_start: float = 0.0
+        self._hit_wall_clock_ceiling: bool = False
 
         # Allocation tracking
         self._gcbba_run_count = 0
@@ -320,6 +327,50 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
         t0 = time.perf_counter()
         super()._plan_paths()
         self._path_plan_times_ms.append((time.perf_counter() - t0) * 1000.0)
+
+    def run_simulation(self, timesteps: int = 100) -> None:
+        """C3: Override to add a per-run wall-clock cap.
+
+        Replicates the base class loop and breaks early if elapsed wall time
+        exceeds self._wall_time_limit_s.  Metrics are still computed correctly
+        from whatever timesteps completed (throughput normalises by ss_steps).
+        """
+        from tqdm import tqdm
+        self._run_wall_start = time.perf_counter()
+        pbar = tqdm(
+            range(timesteps),
+            desc=f"Simulation ({self.allocation_method.upper()})",
+            leave=True,
+        )
+        for _ in pbar:
+            if self._wall_time_limit_s is not None:
+                elapsed = time.perf_counter() - self._run_wall_start
+                if elapsed > self._wall_time_limit_s:
+                    self._hit_wall_clock_ceiling = True
+                    tqdm.write(
+                        f"[t={self.current_timestep}] WALL-CLOCK LIMIT "
+                        f"({self._wall_time_limit_s / 60:.0f} min) exceeded "
+                        f"({elapsed / 60:.1f} min elapsed) — stopping early.",
+                        flush=True,
+                    )
+                    break
+            self.step()
+            done = len(self.completed_task_ids)
+            q = (
+                float(np.mean(list(self._induct_queue_depth.values())))
+                if self._induct_queue_depth else 0
+            )
+            pbar.set_postfix(done=done, t=self.current_timestep, q=f"{q:.2f}", refresh=False)
+            # Batch-mode early exit (mirrored from base class)
+            if (
+                self.completed_task_ids >= self.all_task_ids
+                and self.task_arrival_rate == 0
+                and self.all_task_ids
+            ):
+                tqdm.write(
+                    f"All {len(self.completed_task_ids)} tasks completed at t={self.current_timestep}."
+                )
+                break
 
     def step(self, *args, **kwargs):
         """
@@ -708,6 +759,9 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
         # C1: allocation timeout count
         m.num_allocation_timeouts = self._num_allocation_timeouts
 
+        # C3: wall-clock ceiling flag
+        m.hit_wall_clock_ceiling = self._hit_wall_clock_ceiling
+
         # Build unique run ID — batch mode uses "it{N}" tag, steady-state uses "ar{rate}"
         if self.initial_tasks > 0 and task_arrival_rate == 0:
             m.run_id = f"{config_name}_it{self.initial_tasks}_cr{int(comm_range)}_s{seed}"
@@ -775,7 +829,8 @@ def get_experiment_configs(mode: str = "full") -> List[Dict]:
     # multi-hour runs.  At ar >= 0.1 the simulation is overloaded anyway.
     # With WARMUP_TIMESTEPS=300 a cap of 800 gives 500 ts of steady-state window.
     CBBA_SGA_SS_CAPPED_TIMESTEPS = 800
-    ALLOCATION_TIMEOUT_S = 30.0  # C1: hard cap on a single allocation call
+    ALLOCATION_TIMEOUT_S = 10.0  # C1: hard cap on a single allocation call (reduced from 30s)
+    WALL_CLOCK_LIMIT_S = 600.0   # C3: hard cap on total run wall time (10 min)
 
     for ar, cr in itertools.product(arrival_rates, comm_ranges):
 
@@ -824,6 +879,7 @@ def get_experiment_configs(mode: str = "full") -> List[Dict]:
             "seeds": seeds,
             "max_timesteps": cbba_sga_max_ts,
             "allocation_timeout_s": ALLOCATION_TIMEOUT_S,  # C1
+            "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,      # C3
         })
 
         # ── SGA centralized baseline ─────────────────────────────────
@@ -839,6 +895,7 @@ def get_experiment_configs(mode: str = "full") -> List[Dict]:
             "seeds": seeds,
             "max_timesteps": cbba_sga_max_ts,
             "allocation_timeout_s": ALLOCATION_TIMEOUT_S,  # C1
+            "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,      # C3
         })
 
     # ── Batch mode configs (initial_tasks > 0, rate = 0) ─────────────────
@@ -888,6 +945,7 @@ def get_experiment_configs(mode: str = "full") -> List[Dict]:
             "seeds": seeds,
             "max_timesteps": BATCH_MAX_TIMESTEPS,
             "allocation_timeout_s": ALLOCATION_TIMEOUT_S,  # C1
+            "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,      # C3
         })
 
         # SGA batch baseline
@@ -904,6 +962,7 @@ def get_experiment_configs(mode: str = "full") -> List[Dict]:
             "seeds": seeds,
             "max_timesteps": BATCH_MAX_TIMESTEPS,
             "allocation_timeout_s": ALLOCATION_TIMEOUT_S,  # C1
+            "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,      # C3
         })
 
     return configs
@@ -927,6 +986,7 @@ def run_single_experiment(
     allocation_method: str = "gcbba",
     initial_tasks: int = 0,
     allocation_timeout_s: Optional[float] = None,
+    wall_clock_limit_s: Optional[float] = None,
 ) -> Tuple[RunMetrics, "InstrumentedOrchestrator"]:
     np.random.seed(seed)
 
@@ -942,6 +1002,7 @@ def run_single_experiment(
         max_plan_time=200,   # A* search horizon — 30×30 grid, 200 is plenty
         allocation_method=allocation_method,
         allocation_timeout_s=allocation_timeout_s,
+        wall_clock_limit_s=wall_clock_limit_s,
     )
 
     t0 = time.perf_counter()
@@ -987,7 +1048,7 @@ SUMMARY_FIELDS = [
     "task_arrival_rate", "initial_tasks", "queue_max_depth", "warmup_timesteps",
     "comm_range", "rerun_interval", "stuck_threshold", "num_agents",
     "num_tasks_total", "num_tasks_completed",
-    "all_tasks_completed", "hit_timestep_ceiling", "makespan", "total_steps",
+    "all_tasks_completed", "hit_timestep_ceiling", "hit_wall_clock_ceiling", "makespan", "total_steps",
     "num_gcbba_runs", "avg_tasks_per_gcbba_call",
     "num_gcbba_runs_batch_triggered", "num_gcbba_runs_interval_triggered",
     "total_gcbba_time_ms", "avg_gcbba_time_ms", "max_gcbba_time_ms", "std_gcbba_time_ms",
@@ -1270,6 +1331,7 @@ def main():
                     allocation_method=cfg.get("allocation_method", "gcbba"),
                     initial_tasks=cfg.get("initial_tasks", 0),
                     allocation_timeout_s=cfg.get("allocation_timeout_s", None),
+                    wall_clock_limit_s=cfg.get("wall_clock_limit_s", None),
                 )
 
                 save_run_results(metrics, orch, output_dir)
