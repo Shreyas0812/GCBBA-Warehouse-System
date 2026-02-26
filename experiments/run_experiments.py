@@ -818,7 +818,7 @@ def get_experiment_configs(mode: str = "full") -> List[Dict]:
 
     else:  # full
         seeds = [42, 123, 456, 789, 1024]
-        arrival_rates = [0.01, 0.02, 0.03, 0.05, 0.1, 0.15, 0.2]
+        arrival_rates = [0.02, 0.04, 0.06, 0.08, 0.1, 0.12, 0.14, 0.16, 0.18, 0.2]
         comm_ranges = [3, 5, 8, 13, 20, 45]
         rerun_intervals = [10, 25, 50, 100, 200]
         batch_task_counts = [20, 40, 80, 160]
