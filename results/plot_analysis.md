@@ -91,6 +91,9 @@
 
 **File:** `plots/20260225_095021/throughput_vs_arrival_rate.png`
 
+![throughput vs arrival rate](plots/20260225_095021/throughput_vs_arrival_rate.png)
+
+
 **What it shows:** Three-panel plot (cr=5 disconnected, cr=13 well-connected, cr=45 fully connected). X-axis is arrival rate (tasks/ts/station); Y-axis is throughput (tasks/ts). Dashed line is the theoretical maximum if no bottleneck existed.
 
 **Key observations:**
@@ -108,6 +111,9 @@
 
 **File:** `plots/20260225_095021/throughput_vs_comm_range_ss.png`
 
+![throughput vs comm range ss](plots/20260225_095021/throughput_vs_comm_range_ss.png)
+
+
 **What it shows:** Four panels, one per arrival rate (ar=0.01, 0.03, 0.05, 0.1). X-axis is communication range; shaded region marks the disconnected regime. Y-axis is throughput.
 
 **Key observations:**
@@ -124,6 +130,9 @@
 
 **File:** `plots/20260225_095021/throughput_curves_ss.png`
 
+![throughput curves ss](plots/20260225_095021/throughput_curves_ss.png)
+
+
 **What it shows:** Two panels at ar=0.1 — cr=5 (disconnected) and cr=45 (well-connected). X-axis is timestep (0–1500); Y-axis is cumulative tasks completed.
 
 **Key observations:**
@@ -138,6 +147,9 @@
 ### 1.4 Throughput Ramp-Up Curve
 
 **File:** `plots/20260225_095021/throughput_rampup_ss.png`
+
+![throughput rampup ss](plots/20260225_095021/throughput_rampup_ss.png)
+
 
 **What it shows:** Instantaneous throughput (20-step rolling average) for SS ar=0.05, cr=45, all four methods. X-axis is timestep; dashed line is theoretical max.
 
@@ -155,6 +167,9 @@
 
 **File:** `plots/20260225_095021/optimality_ratio_ss.png`
 
+![optimality ratio ss](plots/20260225_095021/optimality_ratio_ss.png)
+
+
 **What it shows:** Four panels (one per arrival rate). Y-axis is throughput / SGA throughput (1.0 = matches SGA; >1.0 = beats SGA). X-axis is communication range.
 
 **Key observations:**
@@ -169,6 +184,9 @@
 ### 1.6 Decentralization Penalty
 
 **File:** `plots/20260225_095021/decentralization_penalty_ss.png`
+
+![decentralization penalty ss](plots/20260225_095021/decentralization_penalty_ss.png)
+
 
 **What it shows:** Throughput penalty (%) relative to SGA for GCBBA variants and CBBA, at ar=0.05, across communication ranges.
 
@@ -189,6 +207,9 @@
 
 **File:** `plots/20260225_095021/task_wait_time.png`
 
+![task wait time](plots/20260225_095021/task_wait_time.png)
+
+
 **What it shows:** Two panels at cr=45 (best case for baselines). Left: mean task wait time (injection → execution start). Right: maximum task wait time. X-axis is arrival rate.
 
 **Key observations:**
@@ -206,6 +227,9 @@
 
 **File:** `plots/20260225_095021/queue_metrics.png`
 
+![queue metrics](plots/20260225_095021/queue_metrics.png)
+
+
 **What it shows:** Two panels at cr=45. Left: average queue depth (tasks/station) vs arrival rate. Right: queue saturation fraction (% of timesteps any station was at max capacity = 10 tasks).
 
 **Key observations:**
@@ -221,6 +245,9 @@
 ### 2.3 Queue Drop Rate
 
 **File:** `plots/20260225_095021/queue_drop_rate_ss.png`
+
+![queue drop rate ss](plots/20260225_095021/queue_drop_rate_ss.png)
+
 
 **What it shows:** Three panels (cr=5, cr=13, cr=45). Y-axis is queue drop rate (% — tasks dropped due to full induct queue / tasks that would have been injected). X-axis is arrival rate.
 
@@ -238,6 +265,9 @@
 ### 2.4 Queue Depth Time Series
 
 **File:** `plots/20260225_095021/queue_depth_timeseries.png`
+
+![queue depth timeseries](plots/20260225_095021/queue_depth_timeseries.png)
+
 
 **What it shows:** Rolling 25-timestep average mean queue depth over time at ar=0.05, cr=45. Shaded band = ±1 std across seeds. Dashed vertical line marks warmup end (t=300).
 
@@ -259,6 +289,9 @@
 
 **File:** `plots/20260225_095021/allocation_scalability.png`
 
+![allocation scalability](plots/20260225_095021/allocation_scalability.png)
+
+
 **What it shows:** Two panels. Left: log-scale allocation time per call vs arrival rate for all methods including ar=0.2 (where available). Right: linear-scale for primary rates, CBBA excluded (off-chart). Red dashed line = 1 s/call feasibility threshold.
 
 **Key observations:**
@@ -274,6 +307,9 @@
 ### 3.2 Allocation Time Distribution
 
 **File:** `plots/20260225_095021/allocation_time_distribution_ss.png`
+
+![allocation time distribution ss](plots/20260225_095021/allocation_time_distribution_ss.png)
+
 
 **What it shows:** Two panels at ar=0.05, cr=45. Left: violin plot of allocation call durations. Right: log-scale box plot showing tails and outliers. Red dashed line = 1s threshold.
 
@@ -292,6 +328,9 @@
 
 **File:** `plots/20260225_095021/scaling_exponent_ss.png`
 
+![scaling exponent ss](plots/20260225_095021/scaling_exponent_ss.png)
+
+
 **What it shows:** Left panel: log-log plot of allocation time vs arrival rate with power-law fit lines. Right panel: bar chart of fitted exponent k (time ∝ arrival_rate^k).
 
 **Key observations:**
@@ -309,6 +348,9 @@
 
 **File:** `plots/20260225_095021/peak_vs_avg_allocation_time_ss.png`
 
+![peak vs avg allocation time ss](plots/20260225_095021/peak_vs_avg_allocation_time_ss.png)
+
+
 **What it shows:** Three panels — average allocation time, worst-case (peak) allocation time, and coefficient of variation (CV = std/mean × 100%). All vs arrival rate.
 
 **Key observations:**
@@ -325,6 +367,9 @@
 
 **File:** `plots/20260225_095021/gcbba_timing_ss.png`
 
+![gcbba timing ss](plots/20260225_095021/gcbba_timing_ss.png)
+
+
 **What it shows:** Two panels — allocation computation time per call (left) and number of allocation reruns per simulation run (right), both for GCBBA variants and baselines, vs arrival rate.
 
 **Key observations:**
@@ -340,6 +385,9 @@
 ### 3.6 Compute Budget: Allocation vs Path Planning
 
 **File:** `plots/20260225_095021/compute_budget_breakdown_ss.png`
+
+![compute budget breakdown ss](plots/20260225_095021/compute_budget_breakdown_ss.png)
+
 
 **What it shows:** Left: total wall-time budget split between allocation and A* path planning per method. Right: scatter plot of per-call allocation time vs path planning time (dashed line = equal cost).
 
@@ -360,6 +408,9 @@
 
 **File:** `plots/20260225_095021/agent_time_breakdown_ss.png`
 
+![agent time breakdown ss](plots/20260225_095021/agent_time_breakdown_ss.png)
+
+
 **What it shows:** Stacked bar charts showing % of agent-timesteps spent Working (executing tasks/travelling), Idle (waiting), and Charging, across four arrival rates.
 
 **Key observations:**
@@ -376,6 +427,9 @@
 
 **File:** `plots/20260225_095021/agent_utilization_ss.png`
 
+![agent utilization ss](plots/20260225_095021/agent_utilization_ss.png)
+
+
 **What it shows:** Two panels. Left: average idle ratio (fraction of timesteps agent is idle) vs arrival rate. Right: task distribution fairness (std dev of tasks assigned across agents) vs arrival rate.
 
 **Key observations:**
@@ -390,6 +444,9 @@
 
 **File:** `plots/20260225_095021/task_execution_quality_ss.png`
 
+![task execution quality ss](plots/20260225_095021/task_execution_quality_ss.png)
+
+
 **What it shows:** Two panels. Left: average path length (grid steps per completed task). Right: charging-induced task abort rate (% of completed tasks that were interrupted by a charging event).
 
 **Key observations:**
@@ -403,6 +460,9 @@
 ### 4.4 Step Wall Time (Real-Time Feasibility)
 
 **File:** `plots/20260225_095021/step_wall_time.png`
+
+![step wall time](plots/20260225_095021/step_wall_time.png)
+
 
 **What it shows:** Four-panel plot — SS average, SS worst-case (peak), Batch average, Batch worst-case. Red dashed line = 1 s/tick (threshold for 1 Hz real-time deployment). Y-axis is ms.
 
@@ -424,6 +484,9 @@
 
 **File:** `plots/20260225_095021/trigger_breakdown_ss.png`
 
+![trigger breakdown ss](plots/20260225_095021/trigger_breakdown_ss.png)
+
+
 **What it shows:** Four panels (one per arrival rate). Bar chart showing average GCBBA reruns per run, broken down by trigger type: Batch (enough tasks completed) vs Interval timer (cooldown elapsed).
 
 **Key observations:**
@@ -440,6 +503,9 @@
 
 **File:** `plots/20260225_095021/rerun_interval_sweep_ss.png`
 
+![rerun interval sweep ss](plots/20260225_095021/rerun_interval_sweep_ss.png)
+
+
 **What it shows:** 2×4 grid — top row is throughput, bottom row is completion rate, columns are arrival rates (0.01, 0.03, 0.05, 0.10). X-axis is communication range. Red dot = ri=50 (canonical). Other values show sensitivity.
 
 **Key observations:**
@@ -455,6 +521,9 @@
 ### 5.3 Graph Connectivity vs Performance
 
 **File:** `plots/20260225_095021/graph_connectivity_ss.png`
+
+![graph connectivity ss](plots/20260225_095021/graph_connectivity_ss.png)
+
 
 **What it shows:** Scatter plot at ar=0.10. X-axis is number of initial communication graph components (4 = most disconnected; 1 = fully connected). Y-axis is throughput (tasks/ts).
 
@@ -476,6 +545,9 @@
 
 **File:** `plots/20260225_095021/charging_overhead_ss.png`
 
+![charging overhead ss](plots/20260225_095021/charging_overhead_ss.png)
+
+
 **What it shows:** Two panels. Left: energy management overhead (% of agent-timesteps spent charging or navigating to charger) vs arrival rate. Right: charging frequency (number of charging events per run) vs arrival rate.
 
 **Key observations:**
@@ -490,6 +562,9 @@
 ### 6.2 Energy Performance Scatter
 
 **File:** `plots/20260225_095021/energy_performance_ss.png`
+
+![energy performance ss](plots/20260225_095021/energy_performance_ss.png)
+
 
 **What it shows:** Scatter plot. X-axis: charging overhead (% of agent-timesteps). Y-axis: throughput (tasks/ts). Each point is one (method, arrival rate, comm range) combination. Lower-left is ideal.
 
@@ -511,6 +586,9 @@
 
 **File:** `plots/20260225_095021/makespan_vs_comm_range.png`
 
+![makespan vs comm range](plots/20260225_095021/makespan_vs_comm_range.png)
+
+
 **What it shows:** Three panels (5, 10, 20 tasks/induct = 40, 80, 160 total tasks). X-axis is communication range; shaded red region marks disconnected regime. Y-axis is makespan (timesteps to complete all tasks).
 
 **Key observations:**
@@ -526,6 +604,9 @@
 ### 7.2 Makespan Comparison at cr=45
 
 **File:** `plots/20260225_095021/makespan_comparison.png`
+
+![makespan comparison](plots/20260225_095021/makespan_comparison.png)
+
 
 **What it shows:** Bar chart at cr=45 (fully connected). Three groups (tpi=5, 10, 20). Bar heights are median makespan; error bars show ±1 std. Numbers are medians.
 
@@ -544,6 +625,9 @@
 
 **File:** `plots/20260225_095021/improvement_ratio.png`
 
+![improvement ratio](plots/20260225_095021/improvement_ratio.png)
+
+
 **What it shows:** Makespan gap (%) relative to SGA across communication ranges. Positive = slower than SGA; negative = better than SGA. Only includes runs where both methods completed all tasks.
 
 **Key observations:**
@@ -560,6 +644,9 @@
 
 **File:** `plots/20260225_095021/decentralization_penalty_batch.png`
 
+![decentralization penalty batch](plots/20260225_095021/decentralization_penalty_batch.png)
+
+
 **What it shows:** Makespan penalty (%) relative to SGA for GCBBA variants and CBBA at tpi=10, across communication ranges.
 
 **Key observations:**
@@ -574,6 +661,9 @@
 ### 7.5 Task Completion Rate by Communication Range
 
 **File:** `plots/20260225_095021/completion_rate.png`
+
+![completion rate](plots/20260225_095021/completion_rate.png)
+
 
 **What it shows:** Task completion rate (% of runs where all tasks were completed within the 3000-ts time limit) by communication range, aggregated across all task loads.
 
@@ -591,6 +681,9 @@
 
 **File:** `plots/20260225_095021/completion_rate_by_tpi.png`
 
+![completion rate by tpi](plots/20260225_095021/completion_rate_by_tpi.png)
+
+
 **What it shows:** Three panels (tpi=5, 10, 20). Same as §7.5 but broken down by task load.
 
 **Key observations:**
@@ -605,6 +698,9 @@
 ### 7.7 Batch Failure Heatmap
 
 **File:** `plots/20260225_095021/batch_failure_heatmap.png`
+
+![batch failure heatmap](plots/20260225_095021/batch_failure_heatmap.png)
+
 
 **What it shows:** Heatmap per method with axes Communication Range (y) × Tasks per Induct Station (x). Color = completion rate (green=100%, red=0%). 3 seeds per cell.
 
@@ -622,6 +718,9 @@
 ### 7.8 Cumulative Throughput Curves (Batch)
 
 **File:** `plots/20260225_095021/throughput_curves_batch.png`
+
+![throughput curves batch](plots/20260225_095021/throughput_curves_batch.png)
+
 
 **What it shows:** Two panels at tpi=20 (160 total tasks) — cr=5 (disconnected) and cr=45 (fully connected). X-axis is timestep (0–3000); Y-axis is cumulative tasks completed.
 
@@ -642,6 +741,9 @@
 
 **File:** `plots/20260225_095021/batch_allocation_scalability.png`
 
+![batch allocation scalability](plots/20260225_095021/batch_allocation_scalability.png)
+
+
 **What it shows:** Two panels — log-scale (all methods) and linear-scale (CBBA excluded). X-axis is tasks per induct station (5, 10, 20). Y-axis is average allocation time per call.
 
 **Key observations:**
@@ -656,6 +758,9 @@
 ### 8.2 Allocation Time Distribution (Batch)
 
 **File:** `plots/20260225_095021/allocation_time_distribution_batch.png`
+
+![allocation time distribution batch](plots/20260225_095021/allocation_time_distribution_batch.png)
+
 
 **What it shows:** Two panels at tpi=20, cr=45. Left: violin plot. Right: log-scale box plot with outliers.
 
@@ -672,6 +777,9 @@
 ### 8.3 Allocation Scaling Exponents (Batch)
 
 **File:** `plots/20260225_095021/scaling_exponent_batch.png`
+
+![scaling exponent batch](plots/20260225_095021/scaling_exponent_batch.png)
+
 
 **What it shows:** Log-log fit and empirical exponents for batch mode (task count axis).
 
@@ -690,6 +798,9 @@
 
 **File:** `plots/20260225_095021/peak_vs_avg_allocation_time_batch.png`
 
+![peak vs avg allocation time batch](plots/20260225_095021/peak_vs_avg_allocation_time_batch.png)
+
+
 **What it shows:** Three panels — average, peak (worst-case), and CV of allocation time, vs tasks per induct station.
 
 **Key observations:**
@@ -704,6 +815,9 @@
 
 **File:** `plots/20260225_095021/gcbba_timing_batch.png`
 
+![gcbba timing batch](plots/20260225_095021/gcbba_timing_batch.png)
+
+
 **What it shows:** Two panels — allocation time per call (left) and rerun frequency (right), vs tasks per induct station.
 
 **Key observations:**
@@ -717,6 +831,9 @@
 ### 8.6 Compute Budget: Allocation vs Path Planning (Batch)
 
 **File:** `plots/20260225_095021/compute_budget_breakdown_batch.png`
+
+![compute budget breakdown batch](plots/20260225_095021/compute_budget_breakdown_batch.png)
+
 
 **What it shows:** Left: total wall time split between allocation and A* path planning. Right: scatter of per-call allocation vs path planning cost.
 
@@ -737,6 +854,9 @@
 
 **File:** `plots/20260225_095021/agent_time_breakdown_batch.png`
 
+![agent time breakdown batch](plots/20260225_095021/agent_time_breakdown_batch.png)
+
+
 **What it shows:** Stacked bar charts at tpi=5, 10, 20 — Working, Idle, Charging fractions.
 
 **Key observations:**
@@ -754,6 +874,9 @@
 
 **File:** `plots/20260225_095021/agent_utilization_batch.png`
 
+![agent utilization batch](plots/20260225_095021/agent_utilization_batch.png)
+
+
 **What it shows:** Left: average idle ratio vs tpi. Right: task distribution std dev vs tpi.
 
 **Key observations:**
@@ -767,6 +890,9 @@
 ### 9.3 Task Execution Quality (Batch)
 
 **File:** `plots/20260225_095021/task_execution_quality_batch.png`
+
+![task execution quality batch](plots/20260225_095021/task_execution_quality_batch.png)
+
 
 **What it shows:** Left: path length (grid steps per task). Right: charging-induced task abort rate.
 
@@ -783,6 +909,9 @@
 
 **File:** `plots/20260225_095021/trigger_breakdown_batch.png`
 
+![trigger breakdown batch](plots/20260225_095021/trigger_breakdown_batch.png)
+
+
 **What it shows:** Three panels (tpi=5, 10, 20). Bar chart: GCBBA reruns per run by trigger type (Batch vs Interval timer).
 
 **Key observations:**
@@ -797,6 +926,9 @@
 ### 9.5 Rerun Interval Sensitivity (Batch)
 
 **File:** `plots/20260225_095021/rerun_interval_sweep_batch.png`
+
+![rerun interval sweep batch](plots/20260225_095021/rerun_interval_sweep_batch.png)
+
 
 **What it shows:** 2×3 grid — top row: makespan, bottom row: completion rate. Columns: tpi=5, 10, 20. X-axis: communication range. Single red dot = ri=50 canonical value.
 
@@ -813,6 +945,9 @@
 ### 9.6 Graph Connectivity vs Performance (Batch)
 
 **File:** `plots/20260225_095021/graph_connectivity_batch.png`
+
+![graph connectivity batch](plots/20260225_095021/graph_connectivity_batch.png)
+
 
 **What it shows:** Scatter plot at tpi=20. X-axis: initial communication graph components. Y-axis: makespan.
 
@@ -834,6 +969,9 @@
 
 **File:** `plots/20260225_095021/charging_overhead_batch.png`
 
+![charging overhead batch](plots/20260225_095021/charging_overhead_batch.png)
+
+
 **What it shows:** Two panels — overhead % (left) and charging frequency (right) vs tasks per induct station.
 
 **Key observations:**
@@ -848,6 +986,9 @@
 ### 10.2 Energy Performance Scatter (Batch)
 
 **File:** `plots/20260225_095021/energy_performance_batch.png`
+
+![energy performance batch](plots/20260225_095021/energy_performance_batch.png)
+
 
 **What it shows:** Scatter at batch mode. X-axis: charging overhead (%). Y-axis: makespan (timesteps). Lower-left = ideal.
 
@@ -871,6 +1012,9 @@
 
 **File:** `plots/20260225_095021/collision_deadlock.png`
 
+![collision deadlock](plots/20260225_095021/collision_deadlock.png)
+
+
 **What it shows:** Two panels. Left: average post-hoc vertex collisions per run (averaged across all seeds and modes). Right: average distinct stuck events per run. X-axis: communication range; separate bar groups for SS and batch modes, all methods.
 
 **Key observations:**
@@ -886,6 +1030,9 @@
 ### 11.2 Energy Safety Margin
 
 **File:** `plots/20260225_095021/energy_safety_margin.png`
+
+![energy safety margin](plots/20260225_095021/energy_safety_margin.png)
+
 
 **What it shows:** Grouped bar chart, two panels (Steady-State left, Batch right). Three bars per method: avg final energy, min final energy, min energy ever. Δ = brownout gap (min_final − min_energy_ever).
 
