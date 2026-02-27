@@ -1,0 +1,41 @@
+The Setup (1 min)
+"I'm evaluating a decentralized multi-robot task allocation algorithm called GCBBA against two baselines — CBBA (a standard consensus-based algorithm) and SGA (the centralized greedy upper bound, meaning it has full information). The warehouse has 6 robots, 8 induct stations, 38 eject stations. I tested two settings: steady-state (tasks arriving continuously) and batch mode (all tasks given upfront)."
+
+The Headline Result (2 min)
+"In steady-state, GCBBA achieves near-capacity throughput across all tested load levels and all communication ranges. At the highest arrival rate (0.10 tasks/timestep/station, ~80% of theoretical capacity), GCBBA delivers ~0.82 tasks/ts. CBBA collapses to ~0.14 — that's a 6× gap. SGA, which is supposed to be the upper bound, collapses to ~0.28.
+
+The striking result is that GCBBA beats SGA at high load. The centralized upper bound is not actually an upper bound in real-time operation — it's computationally infeasible."
+
+The Mechanism (1.5 min)
+"The reason is entirely allocation latency. I measured allocation time per call:
+
+Static GCBBA: ~500ms at high load
+SGA: ~8,000ms — a 16× difference
+CBBA: hitting the 10-second timeout ceiling
+The scaling exponents confirm this structurally: GCBBA scales sub-quadratically (k=1.89), CBBA nearly cubic (k=2.98), SGA super-cubic (k=3.41). So at realistic warehouse task loads, the baselines' compute cost is fundamentally incompatible with real-time deployment."
+
+Downstream Effects (1.5 min)
+"The allocation bottleneck cascades into three downstream failures for CBBA/SGA:
+
+Queue saturation — GCBBA maintains zero queue depth at all loads; CBBA's queues saturate at ~50% of timesteps at high load, actively discarding arriving tasks
+Task wait time — SGA produces worst-case waits of >1000 timesteps (16+ minutes if 1 ts = 1s); GCBBA keeps waits under 2 timesteps
+Agent paradox — at high load, CBBA/SGA agents are more idle than GCBBA agents, because they're waiting for the slow allocator to assign them work"
+Communication Range (1 min)
+"GCBBA is completely insensitive to communication range — throughput is flat from the disconnected regime (cr=5) to fully connected (cr=45). CBBA and SGA need a connected graph for global consensus, so they degrade even further in sparse communication. This is the core algorithmic claim: GCBBA is designed for dynamic, incomplete communication graphs."
+
+Batch Mode — The Nuanced Story (1.5 min)
+"Batch mode tells a more nuanced story. When tasks are pre-known and connectivity is good, CBBA and SGA achieve better makespan (~200–230 timesteps vs. GCBBA's ~1,100–2,100). That's expected — centralized one-shot assignment beats distributed allocation for static problems.
+
+But two interesting things happen:
+
+Static GCBBA occasionally beats SGA's makespan at full connectivity, suggesting the distributed optimization finds solutions the greedy sequential approach misses
+In disconnected regimes, GCBBA is again the only method that reliably completes tasks — Dynamic GCBBA achieves 56% completion at cr=5 where CBBA gets 0%
+So batch mode confirms: GCBBA is not the right tool for offline, well-connected, static planning — but for real-time dynamic operation, it dominates."
+
+The Core Contribution (1 min)
+"The central thesis claim is validated: GCBBA is the only method that is simultaneously (1) real-time feasible, (2) communication-topology agnostic, and (3) throughput-optimal under realistic warehouse loads. No other tested method satisfies all three.
+
+The result that surprised me most is that 'centralized upper bound' is a misnomer — SGA's centralization is actually its weakness in real-time operation. The optimality bound only holds when computation is free."
+
+One-Line Takeaway
+"GCBBA maintains 80%+ theoretical capacity throughput at all loads and communication conditions. CBBA and SGA are computationally infeasible for real-time operation above moderate load, collapsing to 14–28% of capacity despite being the 'standard' and 'optimal' references."
