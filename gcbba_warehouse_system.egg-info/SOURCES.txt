@@ -8,6 +8,7 @@ collision_avoidance/grid_map.py
 collision_avoidance/time_based_collision_avoidance.py
 experiments/__init__.py
 experiments/plot_results.py
+experiments/recover_summary.py
 experiments/run_experiments.py
 gcbba/GCBBA_Agent.py
 gcbba/GCBBA_Orchestrator.py
