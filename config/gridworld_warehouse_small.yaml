@@ -179,3 +179,4 @@ create_gridworld_node:
       agents: "gridworld/agents"
       induct_stations: "gridworld/induct_stations"
       eject_stations: "gridworld/eject_stations"
+      charging_stations: "gridworld/charging_stations"
