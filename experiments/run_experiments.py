@@ -777,7 +777,7 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
 #  Experiment config generator
 # ─────────────────────────────────────────────────────────────────
 
-def get_experiment_configs(mode: str = "full") -> List[Dict]:
+def get_experiment_configs(mode: str = "full", num_agents: int = 6) -> List[Dict]:
     """
     Build the list of experimental configurations to run.
 
@@ -830,9 +830,9 @@ def get_experiment_configs(mode: str = "full") -> List[Dict]:
     BATCH_MAX_TIMESTEPS = 3000  # Batch mode needs more headroom to complete all tasks
     # Pre-load steady-state runs with tasks so agents are active from t=0 and the
     # warmup window captures loaded behaviour rather than empty-queue ramp-up.
-    # 2 × num_agents (6) = 12 gives every agent an immediate assignment without
-    # flooding the queues (capacity = QUEUE_MAX_DEPTH × 8 stations = 80 tasks).
-    SS_INITIAL_TASKS = 12
+    # 2 × num_agents gives every agent an immediate assignment without
+    # flooding the queues (capacity = QUEUE_MAX_DEPTH × num_induct_stations tasks).
+    SS_INITIAL_TASKS = 2 * num_agents
     # C2: CBBA/SGA are much slower per-call at high loads; cap timesteps to prevent
     # multi-hour runs.  At ar >= 0.1 the simulation is overloaded anyway.
     # With WARMUP_TIMESTEPS=300 a cap of 800 gives 500 ts of steady-state window.
@@ -999,6 +999,7 @@ def run_single_experiment(
     initial_tasks: int = 0,
     allocation_timeout_s: Optional[float] = None,
     wall_clock_limit_s: Optional[float] = None,
+    max_plan_time: int = 200,
 ) -> Tuple[RunMetrics, "InstrumentedOrchestrator"]:
     np.random.seed(seed)
 
@@ -1011,7 +1012,7 @@ def run_single_experiment(
         comm_range=comm_range,
         rerun_interval=rerun_interval,
         stuck_threshold=stuck_threshold,
-        max_plan_time=200,   # A* search horizon — 30×30 grid, 200 is plenty
+        max_plan_time=max_plan_time,
         allocation_method=allocation_method,
         allocation_timeout_s=allocation_timeout_s,
         wall_clock_limit_s=wall_clock_limit_s,
@@ -1232,22 +1233,41 @@ def main():
         default="medium",
     )
     parser.add_argument("--output", default=None, help="Override output directory")
+    parser.add_argument(
+        "--map",
+        default="gridworld_warehouse_small",
+        help=(
+            "Config map name (without .yaml extension). "
+            "File must exist in config/. "
+            "Default: gridworld_warehouse_small"
+        ),
+    )
     args = parser.parse_args()
 
-    config_path = os.path.join(
-        PROJECT_ROOT, "config", "gridworld_warehouse_small.yaml"
-    )
+    map_name = args.map.replace(".yaml", "")
+    config_path = os.path.join(PROJECT_ROOT, "config", f"{map_name}.yaml")
     if not os.path.exists(config_path):
         print(f"ERROR: Config not found: {config_path}")
         sys.exit(1)
 
+    # Parse config to derive map-specific scaling parameters
+    import yaml as _yaml
+    with open(config_path) as _f:
+        _cfg = _yaml.safe_load(_f)
+    _params = _cfg["create_gridworld_node"]["ros__parameters"]
+    _agent_flat = _params["agent_positions"]
+    _map_num_agents = len(_agent_flat) // 4
+    _grid_w = _params.get("grid_width", 30)
+    _grid_h = _params.get("grid_height", 30)
+    _map_plan_time = max(200, _grid_w + _grid_h)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = args.output or os.path.join(
-        PROJECT_ROOT, "results", "experiments", timestamp
+        PROJECT_ROOT, "results", "experiments", map_name, timestamp
     )
     os.makedirs(output_dir, exist_ok=True)
 
-    all_configs = get_experiment_configs(args.mode)
+    all_configs = get_experiment_configs(args.mode, num_agents=_map_num_agents)
 
     # ── Filter configs based on --config flag ──
     if args.config == "ss_only":
@@ -1283,7 +1303,7 @@ def main():
     total_runs = sum(len(c["seeds"]) for c in configs)
 
     print(f"\n{'='*70}")
-    print(f"GCBBA Experiments | mode={args.mode} | {total_runs} total runs")
+    print(f"GCBBA Experiments | mode={args.mode} | map={map_name} | agents={_map_num_agents} | {total_runs} total runs")
     print(f"Arrival rates:   {sorted(set(c['task_arrival_rate'] for c in configs))}")
     print(f"Comm ranges:     {sorted(set(c['comm_range'] for c in configs))}")
     print(
@@ -1344,6 +1364,7 @@ def main():
                     initial_tasks=cfg.get("initial_tasks", 0),
                     allocation_timeout_s=cfg.get("allocation_timeout_s", None),
                     wall_clock_limit_s=cfg.get("wall_clock_limit_s", None),
+                    max_plan_time=_map_plan_time,
                 )
 
                 save_run_results(metrics, orch, output_dir)
