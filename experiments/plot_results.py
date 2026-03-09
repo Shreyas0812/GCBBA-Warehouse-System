@@ -3643,15 +3643,45 @@ def _generate_plots_for(exp_dir: str, plot_dir: str) -> None:
 
 
 def _find_all_experiment_dirs() -> list:
+    """
+    Find all experiment dirs containing summary.csv.
+    Handles both old layout (results/experiments/<timestamp>/)
+    and new layout (results/experiments/<map_name>/<timestamp>/).
+    """
     project_root = Path(__file__).resolve().parent.parent
     base = project_root / "results" / "experiments"
     if not base.is_dir():
         return []
-    return [
-        str(entry)
-        for entry in sorted(base.iterdir())
-        if entry.is_dir() and (entry / "summary.csv").exists()
-    ]
+    found = []
+    for entry in sorted(base.iterdir()):
+        if not entry.is_dir():
+            continue
+        if (entry / "summary.csv").exists():
+            # Old layout: results/experiments/<timestamp>/
+            found.append(str(entry))
+        else:
+            # New layout: results/experiments/<map_name>/<timestamp>/
+            for sub in sorted(entry.iterdir()):
+                if sub.is_dir() and (sub / "summary.csv").exists():
+                    found.append(str(sub))
+    return found
+
+
+def _plot_dir_for(exp_dir: str, project_root: Path) -> str:
+    """
+    Derive the plot output directory mirroring the experiment directory structure.
+    New layout:  results/experiments/<map_name>/<timestamp>/
+              -> results/plots/<map_name>/<timestamp>/
+    Old layout:  results/experiments/<timestamp>/
+              -> results/plots/<timestamp>/
+    """
+    p = Path(exp_dir).resolve()
+    base = (project_root / "results" / "experiments").resolve()
+    try:
+        rel = p.relative_to(base)   # e.g. map_name/timestamp  or  timestamp
+    except ValueError:
+        rel = Path(p.name)          # fallback: just use the leaf folder name
+    return str(project_root / "results" / "plots" / rel)
 
 
 def main():
@@ -3676,13 +3706,7 @@ def main():
 
     if args.exp_dir:
         exp_dir = args.exp_dir
-        if args.plot_dir:
-            plot_dir = args.plot_dir
-        else:
-            exp_folder_name = os.path.basename(os.path.normpath(exp_dir))
-            plot_dir = str(
-                project_root / "results" / "plots" / exp_folder_name
-            )
+        plot_dir = args.plot_dir or _plot_dir_for(exp_dir, project_root)
         _generate_plots_for(exp_dir, plot_dir)
     else:
         all_dirs = _find_all_experiment_dirs()
@@ -3695,10 +3719,7 @@ def main():
 
         print(f"Found {len(all_dirs)} experiment(s) to plot.")
         for exp_dir in all_dirs:
-            exp_folder_name = os.path.basename(os.path.normpath(exp_dir))
-            plot_dir = str(
-                project_root / "results" / "plots" / exp_folder_name
-            )
+            plot_dir = _plot_dir_for(exp_dir, project_root)
             _generate_plots_for(exp_dir, plot_dir)
 
         print(f"\n{'='*50}")
