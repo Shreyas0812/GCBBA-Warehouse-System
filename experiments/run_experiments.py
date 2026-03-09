@@ -37,6 +37,7 @@ import time
 import threading
 import argparse
 import itertools
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Tuple, Optional, Set
 from datetime import datetime
@@ -1059,6 +1060,37 @@ def run_single_experiment(
 
 
 # ─────────────────────────────────────────────────────────────────
+#  Parallel worker (module-level so ProcessPoolExecutor can pickle it)
+# ─────────────────────────────────────────────────────────────────
+
+def _run_task(task: Dict) -> Tuple[RunMetrics, str]:
+    """
+    Execute one (cfg, seed) experiment and save its per-run results.
+    Returns (metrics, label) so the main process can aggregate and print progress.
+    Must be a module-level function to be picklable by ProcessPoolExecutor.
+    """
+    metrics, orch = run_single_experiment(
+        task["config_path"],
+        task["config_name"],
+        task["task_arrival_rate"],
+        task["queue_max_depth"],
+        task["warmup_timesteps"],
+        task["comm_range"],
+        task["rerun_interval"],
+        task["stuck_threshold"],
+        task["seed"],
+        task["max_timesteps"],
+        allocation_method=task["allocation_method"],
+        initial_tasks=task["initial_tasks"],
+        allocation_timeout_s=task["allocation_timeout_s"],
+        wall_clock_limit_s=task["wall_clock_limit_s"],
+        max_plan_time=task["max_plan_time"],
+    )
+    save_run_results(metrics, orch, task["output_dir"])
+    return metrics, task["label"]
+
+
+# ─────────────────────────────────────────────────────────────────
 #  Output helpers
 # ─────────────────────────────────────────────────────────────────
 
@@ -1262,6 +1294,17 @@ def main():
     )
     parser.add_argument("--output", default=None, help="Override output directory")
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "Number of parallel worker processes. "
+            "1 = sequential (default). "
+            "0 = use all CPU cores (os.cpu_count()). "
+            "On a 16-core machine try --workers 16."
+        ),
+    )
+    parser.add_argument(
         "--map",
         default="gridworld_warehouse_small",
         help=(
@@ -1334,10 +1377,11 @@ def main():
     else:
         configs = all_configs
 
+    num_workers = args.workers if args.workers > 0 else os.cpu_count()
     total_runs = sum(len(c["seeds"]) for c in configs)
 
     print(f"\n{'='*70}")
-    print(f"GCBBA Experiments | mode={args.mode} | map={map_name} | agents={_map_num_agents} | {total_runs} total runs")
+    print(f"GCBBA Experiments | mode={args.mode} | map={map_name} | agents={_map_num_agents} | {total_runs} total runs | workers={num_workers}")
     print(f"Arrival rates:   {sorted(set(c['task_arrival_rate'] for c in configs))}")
     print(f"Comm ranges:     {sorted(set(c['comm_range'] for c in configs))}")
     print(
@@ -1361,72 +1405,92 @@ def main():
             indent=2,
         )
 
-    all_metrics: List[RunMetrics] = []
-    run_num = 0
-
+    # ── Build flat task list ──────────────────────────────────────
+    tasks = []
     for cfg in configs:
         for seed in cfg["seeds"]:
-            run_num += 1
             ri_str = (
                 f"ri={cfg['rerun_interval']}"
                 if cfg["rerun_interval"] < 999999
                 else "ri=static"
             )
-            label = (
-                f"[{run_num}/{total_runs}] "
-                f"{cfg['config_name']} "
-                f"ar={cfg['task_arrival_rate']} "
-                f"cr={cfg['comm_range']} "
-                f"{ri_str} "
-                f"s={seed}"
-            )
-            print(f"\n  {label}")
+            tasks.append({
+                "config_path": config_path,
+                "config_name": cfg["config_name"],
+                "task_arrival_rate": cfg["task_arrival_rate"],
+                "queue_max_depth": cfg["queue_max_depth"],
+                "warmup_timesteps": cfg["warmup_timesteps"],
+                "comm_range": cfg["comm_range"],
+                "rerun_interval": cfg["rerun_interval"],
+                "stuck_threshold": cfg["stuck_threshold"],
+                "seed": seed,
+                "max_timesteps": cfg["max_timesteps"],
+                "allocation_method": cfg.get("allocation_method", "gcbba"),
+                "initial_tasks": cfg.get("initial_tasks", 0),
+                "allocation_timeout_s": cfg.get("allocation_timeout_s", None),
+                "wall_clock_limit_s": cfg.get("wall_clock_limit_s", None),
+                "max_plan_time": _map_plan_time,
+                "output_dir": output_dir,
+                "label": (
+                    f"{cfg['config_name']} "
+                    f"ar={cfg['task_arrival_rate']} "
+                    f"cr={cfg['comm_range']} "
+                    f"{ri_str} "
+                    f"s={seed}"
+                ),
+            })
 
+    def _print_result(metrics: RunMetrics, label: str, run_num: int) -> None:
+        ri_str = (
+            f"batch={metrics.num_gcbba_runs_batch_triggered}"
+            f"/interval={metrics.num_gcbba_runs_interval_triggered}"
+            if metrics.num_gcbba_runs_interval_triggered > 0
+            else ""
+        )
+        print(
+            f"  [{run_num}/{total_runs}] {label}\n"
+            f"    tput={metrics.throughput:.4f}t/ts "
+            f"wait={metrics.avg_task_wait_time:.1f}ts "
+            f"q={metrics.avg_queue_depth:.2f} "
+            f"dropped={metrics.tasks_dropped_by_queue_cap} "
+            f"alloc={metrics.num_gcbba_runs} {ri_str} "
+            f"dead={metrics.num_deadlocks} "
+            f"col={metrics.num_vertex_collisions}v "
+            f"chrg={metrics.num_charging_events}evt "
+            f"graph={metrics.initial_num_components}comp "
+            f"wall={metrics.wall_time_seconds:.1f}s"
+        )
+
+    all_metrics: List[RunMetrics] = []
+
+    if num_workers == 1:
+        # ── Sequential (default) ─────────────────────────────────
+        for run_num, task in enumerate(tasks, 1):
+            print(f"\n  [{run_num}/{total_runs}] {task['label']}")
             try:
-                metrics, orch = run_single_experiment(
-                    config_path,
-                    cfg["config_name"],
-                    cfg["task_arrival_rate"],
-                    cfg["queue_max_depth"],
-                    cfg["warmup_timesteps"],
-                    cfg["comm_range"],
-                    cfg["rerun_interval"],
-                    cfg["stuck_threshold"],
-                    seed,
-                    cfg["max_timesteps"],
-                    allocation_method=cfg.get("allocation_method", "gcbba"),
-                    initial_tasks=cfg.get("initial_tasks", 0),
-                    allocation_timeout_s=cfg.get("allocation_timeout_s", None),
-                    wall_clock_limit_s=cfg.get("wall_clock_limit_s", None),
-                    max_plan_time=_map_plan_time,
-                )
-
-                save_run_results(metrics, orch, output_dir)
+                metrics, label = _run_task(task)
                 all_metrics.append(metrics)
-
-                trigger_str = (
-                    f"batch={metrics.num_gcbba_runs_batch_triggered}"
-                    f"/interval={metrics.num_gcbba_runs_interval_triggered}"
-                    if cfg["rerun_interval"] < 999999
-                    else ""
-                )
-                print(
-                    f"    tput={metrics.throughput:.4f}t/ts "
-                    f"wait={metrics.avg_task_wait_time:.1f}ts "
-                    f"q={metrics.avg_queue_depth:.2f} "
-                    f"dropped={metrics.tasks_dropped_by_queue_cap} "
-                    f"alloc={metrics.num_gcbba_runs} {trigger_str} "
-                    f"dead={metrics.num_deadlocks} "
-                    f"col={metrics.num_vertex_collisions}v "
-                    f"chrg={metrics.num_charging_events}evt "
-                    f"graph={metrics.initial_num_components}comp "
-                    f"wall={metrics.wall_time_seconds:.1f}s"
-                )
-
+                _print_result(metrics, label, run_num)
             except Exception as e:
                 print(f"    FAILED: {e}")
                 import traceback
                 traceback.print_exc()
+    else:
+        # ── Parallel ─────────────────────────────────────────────
+        completed = 0
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            future_to_task = {executor.submit(_run_task, t): t for t in tasks}
+            for future in as_completed(future_to_task):
+                completed += 1
+                try:
+                    metrics, label = future.result()
+                    all_metrics.append(metrics)
+                    _print_result(metrics, label, completed)
+                except Exception as e:
+                    task = future_to_task[future]
+                    print(f"  [{completed}/{total_runs}] FAILED {task['label']}: {e}")
+                    import traceback
+                    traceback.print_exc()
 
     if all_metrics:
         save_summary_csv(all_metrics, output_dir)
