@@ -130,23 +130,66 @@ COLORS = {
     "dynamic_ri200": "#f2a07b",  # light salmon
 }
 
+# -- Markers (distinct per method for print / colorblind readability) --
+MARKERS = {
+    "static":        "o",    # circle   -- Static LCBA
+    "dynamic":       "s",    # square   -- Dynamic LCBA
+    "cbba":          "^",    # triangle -- CBBA baseline
+    "sga":           "*",    # star     -- SGA centralized
+    # Batch variants -- same marker as SS counterpart
+    "static_batch":  "o",
+    "dynamic_batch": "s",
+    "cbba_batch":    "^",
+    "sga_batch":     "*",
+    # Sensitivity sweep
+    "dynamic_ri10":  "s",
+    "dynamic_ri25":  "s",
+    "dynamic_ri50":  "s",
+    "dynamic_ri100": "s",
+    "dynamic_ri200": "s",
+}
+
+MARKER_SIZES = {
+    "static": 7, "dynamic": 7, "cbba": 7, "sga": 9,
+    "static_batch": 7, "dynamic_batch": 7, "cbba_batch": 7, "sga_batch": 9,
+}
+
+# -- Line styles (distinct per method for print / colorblind readability) --
+LINESTYLES = {
+    "static":        "--",    # dashed       -- Static LCBA
+    "dynamic":       "-",     # solid        -- Dynamic LCBA
+    "cbba":          "-.",    # dash-dot     -- CBBA
+    "sga":           ":",     # dotted       -- SGA
+    # Batch variants -- same style as SS counterpart
+    "static_batch":  "--",
+    "dynamic_batch": "-",
+    "cbba_batch":    "-.",
+    "sga_batch":     ":",
+    # Sensitivity sweep -- all dynamic variants use dashed
+    "dynamic_ri10":  "--",
+    "dynamic_ri25":  "--",
+    "dynamic_ri50":  "--",
+    "dynamic_ri100": "--",
+    "dynamic_ri200": "--",
+}
+
 # -- Labels ----------------------------------------------------------
 LABELS = {
-    "static":        "Static GCBBA (one-shot)",
-    "dynamic":       "Dynamic GCBBA (ri=50)",
+    "static":        "Static LCBA (one-shot)",
+    "dynamic":       "Dynamic LCBA (ri=50)",
     "cbba":          "CBBA (standard)",
     "sga":           "SGA (centralized upper bound)",
     # Batch variants
-    "static_batch":  "Static GCBBA (batch)",
-    "dynamic_batch": "Dynamic GCBBA (batch, ri=50)",
+    "static_batch":  "Static LCBA (batch)",
+    "dynamic_batch": "Dynamic LCBA (batch, ri=50)",
     "cbba_batch":    "CBBA (batch)",
     "sga_batch":     "SGA (batch, centralized)",
     # ri sensitivity
-    "dynamic_ri10":  "Dynamic GCBBA (ri=10)",
-    "dynamic_ri25":  "Dynamic GCBBA (ri=25)",
-    "dynamic_ri50":  "Dynamic GCBBA (ri=50)",
-    "dynamic_ri100": "Dynamic GCBBA (ri=100)",
-    "dynamic_ri200": "Dynamic GCBBA (ri=200)",
+    "dynamic_ri10":  "Dynamic LCBA (ri=10)",
+    "dynamic_ri25":  "Dynamic LCBA (ri=25)",
+    "dynamic_ri50":  "Dynamic LCBA (ri=50)",
+    "dynamic_ri100": "Dynamic LCBA (ri=100)",
+    "dynamic_ri200": "Dynamic LCBA (ri=200)",
 }
 
 
@@ -162,6 +205,29 @@ def get_color(config_name: str) -> str:
     if config_name.startswith("dynamic_ri"):
         return "#e07b54"
     return "#888888"
+
+
+def get_marker(config_name: str) -> str:
+    """Return marker for any config_name, with fallback for unknown names."""
+    if config_name in MARKERS:
+        return MARKERS[config_name]
+    if config_name.startswith("dynamic_ri"):
+        return "s"
+    return "o"
+
+
+def get_markersize(config_name: str) -> int:
+    """Return marker size (stars need to be slightly larger)."""
+    return MARKER_SIZES.get(config_name, 7)
+
+
+def get_linestyle(config_name: str) -> str:
+    """Return linestyle for any config_name, with fallback for unknown names."""
+    if config_name in LINESTYLES:
+        return LINESTYLES[config_name]
+    if config_name.startswith("dynamic_ri"):
+        return "--"
+    return "-"
 
 
 # -- Method sets ----------------------------------------------------
@@ -534,7 +600,7 @@ def plot_makespan_vs_comm_range(df: pd.DataFrame, plot_dir: str) -> None:
             ax.errorbar(
                 grouped["comm_range"], grouped["mean"], yerr=grouped["std"],
                 label=get_label(cfg), color=get_color(cfg),
-                marker="o", capsize=4, linewidth=2,
+                marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2,
             )
 
         comm_ranges = sorted(df_sub["comm_range"].unique())
@@ -591,11 +657,9 @@ def plot_improvement_ratio(df: pd.DataFrame, plot_dir: str) -> None:
         m for m in CANONICAL_BATCH_METHODS
         if m != "sga_batch" and m in dfc["config_name"].unique()
     ]
-    linestyles = ["-", "--", "-."]
-    markers = ["o", "s", "^"]
     max_cr = _get_max_connected_cr(dfc)
 
-    for idx, cfg in enumerate(methods_to_compare):
+    for cfg in methods_to_compare:
         method_done = dfc[
             (dfc["config_name"] == cfg) & (dfc["all_tasks_completed"] == True)
         ]
@@ -647,8 +711,8 @@ def plot_improvement_ratio(df: pd.DataFrame, plot_dir: str) -> None:
             ax.errorbar(
                 valid_crs, gaps, yerr=gap_stds,
                 label=get_label(cfg),
-                color=get_color(cfg), marker=markers[idx],
-                linestyle=linestyles[idx], capsize=4, linewidth=2,
+                color=get_color(cfg), marker=get_marker(cfg),
+                linestyle=get_linestyle(cfg), capsize=4, linewidth=2,
             )
 
     ax.axhline(y=0, color="green", linestyle="--", alpha=0.6,
@@ -705,7 +769,8 @@ def plot_gcbba_timing(df: pd.DataFrame, plot_dir: str) -> None:
             )
             ax.errorbar(
                 grouped[x_col], grouped["mean"], yerr=grouped["std"],
-                label=get_label(cfg), color=get_color(cfg), marker="s", capsize=4,
+                label=get_label(cfg), color=get_color(cfg), marker=get_marker(cfg),
+                linestyle=get_linestyle(cfg), capsize=4,
             )
         ax.set_xlabel(x_label)
         ax.set_ylabel("Avg Allocation Time per Call (ms)")
@@ -723,7 +788,8 @@ def plot_gcbba_timing(df: pd.DataFrame, plot_dir: str) -> None:
             )
             ax.errorbar(
                 grouped[x_col], grouped["mean"], yerr=grouped["std"],
-                label=get_label(cfg), color=get_color(cfg), marker="s", capsize=4,
+                label=get_label(cfg), color=get_color(cfg), marker=get_marker(cfg),
+                linestyle=get_linestyle(cfg), capsize=4,
             )
         ax.set_xlabel(x_label)
         ax.set_ylabel("Number of Allocation Runs")
@@ -761,7 +827,8 @@ def plot_agent_utilization(df: pd.DataFrame, plot_dir: str) -> None:
             )
             ax.errorbar(
                 grouped[x_col], grouped["mean"], yerr=grouped["std"],
-                label=get_label(cfg), color=get_color(cfg), marker="o", capsize=4,
+                label=get_label(cfg), color=get_color(cfg), marker=get_marker(cfg),
+                linestyle=get_linestyle(cfg), capsize=4,
             )
         ax.set_xlabel(x_label)
         ax.set_ylabel("Average Idle Ratio")
@@ -780,7 +847,8 @@ def plot_agent_utilization(df: pd.DataFrame, plot_dir: str) -> None:
             )
             ax.errorbar(
                 grouped[x_col], grouped["mean"], yerr=grouped["std"],
-                label=get_label(cfg), color=get_color(cfg), marker="o", capsize=4,
+                label=get_label(cfg), color=get_color(cfg), marker=get_marker(cfg),
+                linestyle=get_linestyle(cfg), capsize=4,
             )
         ax.set_xlabel(x_label)
         ax.set_ylabel("Task Balance Std Dev")
@@ -840,9 +908,14 @@ def plot_throughput_curves(exp_dir: str, df: pd.DataFrame, plot_dir: str) -> Non
                             m = json.load(f)
                         timeline = m.get("tasks_completed_over_time", [])
                         if timeline:
+                            n = len(timeline)
+                            me = max(1, n // 10)
                             ax.plot(
-                                range(len(timeline)), timeline,
+                                range(n), timeline,
                                 label=get_label(cfg), color=get_color(cfg), alpha=0.8,
+                                marker=get_marker(cfg), markevery=me,
+                                markersize=get_markersize(cfg),
+                                linestyle=get_linestyle(cfg),
                             )
             ax.set_xlabel("Timestep")
             ax.set_ylabel("Tasks Completed (cumulative)")
@@ -876,9 +949,14 @@ def plot_throughput_curves(exp_dir: str, df: pd.DataFrame, plot_dir: str) -> Non
                             m = json.load(f)
                         timeline = m.get("tasks_completed_over_time", [])
                         if timeline:
+                            n = len(timeline)
+                            me = max(1, n // 10)
                             ax.plot(
-                                range(len(timeline)), timeline,
+                                range(n), timeline,
                                 label=get_label(cfg), color=get_color(cfg), alpha=0.8,
+                                marker=get_marker(cfg), markevery=me,
+                                markersize=get_markersize(cfg),
+                                linestyle=get_linestyle(cfg),
                             )
             ax.set_xlabel("Timestep")
             ax.set_ylabel("Tasks Completed (cumulative)")
@@ -1184,12 +1262,12 @@ def plot_optimality_ratio(df: pd.DataFrame, plot_dir: str) -> None:
                     ax.errorbar(
                         grouped["comm_range"], grouped["mean"], yerr=grouped["std"],
                         label=get_label(cfg), color=get_color(cfg),
-                        marker="o", capsize=4, linewidth=2,
+                        marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2,
                     )
                 ax.axhline(y=1.0, color="black", linestyle="--", linewidth=1.5,
                            label="SGA reference (1.0)")
                 ax.axhline(y=2.0, color="red", linestyle=":", linewidth=1.5,
-                           label="GCBBA bound (2.0)", alpha=0.7)
+                           label="LCBA bound (2.0)", alpha=0.7)
                 ax.set_xlabel("Communication Range")
                 if ax_idx == 0:
                     ax.set_ylabel("Makespan / SGA Makespan")
@@ -1238,7 +1316,7 @@ def plot_optimality_ratio(df: pd.DataFrame, plot_dir: str) -> None:
                     ax.errorbar(
                         grouped["comm_range"], grouped["mean"], yerr=grouped["std"],
                         label=get_label(cfg), color=get_color(cfg),
-                        marker="o", capsize=4, linewidth=2,
+                        marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2,
                     )
                 ax.axhline(y=1.0, color="black", linestyle="--", linewidth=1.5,
                            label="SGA reference (1.0)")
@@ -1364,7 +1442,7 @@ def plot_rerun_interval_sweep(df: pd.DataFrame, plot_dir: str) -> None:
                        label="_nolegend_")
 
         fig.suptitle(
-            f"Rerun Interval Sensitivity Analysis -- Dynamic GCBBA ({label_prefix})\n"
+            f"Rerun Interval Sensitivity Analysis -- Dynamic LCBA ({label_prefix})\n"
             "(ri=50 is canonical; other values show sensitivity to this design choice)",
             fontsize=13, y=1.02,
         )
@@ -1378,7 +1456,7 @@ def plot_rerun_interval_sweep(df: pd.DataFrame, plot_dir: str) -> None:
 # -----------------------------------------------------------------
 
 def plot_trigger_breakdown(df: pd.DataFrame, plot_dir: str) -> None:
-    """Fraction of GCBBA reruns from batch completion vs interval timer."""
+    """Fraction of LCBA reruns from batch completion vs interval timer."""
     required_cols = {"num_gcbba_runs_batch_triggered", "num_gcbba_runs_interval_triggered"}
     if not required_cols.issubset(df.columns):
         print("  [!] Skipping trigger_breakdown (columns missing from summary.csv)")
@@ -1423,7 +1501,7 @@ def plot_trigger_breakdown(df: pd.DataFrame, plot_dir: str) -> None:
                    edgecolor="black", linewidth=0.5)
 
             ax.set_xlabel("Communication Range")
-            ax.set_ylabel("Avg GCBBA Reruns per Run")
+            ax.set_ylabel("Avg LCBA Reruns per Run")
             ax.set_title(f"Trigger Reasons -- {x_label}={xv}")
             ax.set_xticks(x)
             ax.set_xticklabels([str(int(cr)) for cr in comm_ranges])
@@ -1434,7 +1512,7 @@ def plot_trigger_breakdown(df: pd.DataFrame, plot_dir: str) -> None:
                        label="_nolegend_")
 
         fig.suptitle(
-            f"GCBBA Rerun Trigger Breakdown -- {label_prefix}\n"
+            f"LCBA Rerun Trigger Breakdown -- {label_prefix}\n"
             "(Batch = enough tasks completed; Interval = timer elapsed)",
             fontsize=13, y=1.02,
         )
@@ -1571,7 +1649,7 @@ def plot_energy_performance(df: pd.DataFrame, plot_dir: str) -> None:
                 )
 
         method_handles = [
-            plt.Line2D([0], [0], marker="o", color="w",
+            plt.Line2D([0], [0], marker=get_marker(cfg), color="w",
                        markerfacecolor=get_color(cfg), markersize=10,
                        label=get_label(cfg), markeredgecolor="black", markeredgewidth=0.5)
             for cfg in methods_here
@@ -1640,7 +1718,7 @@ def generate_latex_table(df: pd.DataFrame, plot_dir: str) -> None:
     lines = [
         r"\begin{table}[htbp]",
         r"\centering",
-        r"\caption{Experimental Results (Batch Mode): GCBBA (Static \& Dynamic), CBBA, SGA}",
+        r"\caption{Experimental Results (Batch Mode): LCBA (Static \& Dynamic), CBBA, SGA}",
         r"\label{tab:results_batch}",
         r"\small",
         r"\begin{tabular}{" + col_spec + r"}",
@@ -1750,7 +1828,7 @@ def plot_throughput_vs_arrival_rate(df: pd.DataFrame, plot_dir: str) -> None:
             ax.errorbar(
                 grouped["task_arrival_rate"], grouped["mean"], yerr=grouped["std"],
                 label=get_label(cfg), color=get_color(cfg),
-                marker="o", capsize=4, linewidth=2,
+                marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2,
             )
 
         # Diagonal reference line: perfect throughput = n_stations * arrival_rate
@@ -1814,7 +1892,7 @@ def plot_wait_time(df: pd.DataFrame, plot_dir: str) -> None:
             ax.errorbar(
                 grouped["task_arrival_rate"], grouped["mean"], yerr=grouped["std"],
                 label=get_label(cfg), color=get_color(cfg),
-                marker="o", capsize=4, linewidth=2,
+                marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2,
             )
         ax.set_xlabel("Arrival Rate (tasks/ts/station)")
         ax.set_ylabel(ylabel)
@@ -1865,7 +1943,7 @@ def plot_queue_metrics(df: pd.DataFrame, plot_dir: str) -> None:
         ax.errorbar(
             grouped["task_arrival_rate"], grouped["mean"], yerr=grouped["std"],
             label=get_label(cfg), color=get_color(cfg),
-            marker="o", capsize=4, linewidth=2,
+            marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2,
         )
     ax.set_xlabel("Arrival Rate (tasks/ts/station)")
     ax.set_ylabel("Avg Queue Depth (tasks per station)")
@@ -1885,7 +1963,7 @@ def plot_queue_metrics(df: pd.DataFrame, plot_dir: str) -> None:
         ax.errorbar(
             grouped["task_arrival_rate"], grouped["mean"] * 100, yerr=grouped["std"] * 100,
             label=get_label(cfg), color=get_color(cfg),
-            marker="s", capsize=4, linewidth=2,
+            marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2,
         )
     ax.set_xlabel("Arrival Rate (tasks/ts/station)")
     ax.set_ylabel("Queue Saturation (% of timesteps)")
@@ -1940,31 +2018,36 @@ def plot_throughput_vs_comm_range_ss(df: pd.DataFrame, plot_dir: str) -> None:
             ax.errorbar(
                 grouped["comm_range"], grouped["mean"], yerr=grouped["std"],
                 label=get_label(cfg), color=get_color(cfg),
-                marker="o", capsize=4, linewidth=2,
+                marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2,
             )
-
-        comm_ranges = sorted(df_ar["comm_range"].unique())
-        y_min = ax.get_ylim()[0]
-        for cr in comm_ranges:
-            if cr in CR_ANNOTATIONS:
-                ax.annotate(
-                    CR_ANNOTATIONS[cr], xy=(cr, y_min),
-                    fontsize=8, ha="center", va="top",
-                    color="gray", style="italic",
-                    xytext=(0, -10), textcoords="offset points",
-                )
 
         ax.set_xlabel("Communication Range")
         ax.set_ylabel("Throughput (tasks/ts)")
-        ax.set_title(f"ar={ar} (max {ar*8:.2f} tasks/ts total)")
-        ax.legend(fontsize=9)
+        ax.set_title(f"ar={ar:.2f}  (max {ar*8:.2f} tasks/ts)")
         ax.grid(alpha=0.3)
         ax.set_ylim(bottom=0)
         ax.axvspan(0, CONNECTIVITY_THRESHOLD - 1, alpha=0.08, color="red",
                    label="_nolegend_")
 
+        # Annotate disconnected comm-range landmarks — placed inside axes to avoid
+        # clipping/overlap with x-axis tick labels.
+        comm_ranges = sorted(df_ar["comm_range"].unique())
+        y_top = ax.get_ylim()[1]
+        for cr in comm_ranges:
+            if cr in CR_ANNOTATIONS:
+                label = CR_ANNOTATIONS[cr].replace("\n", " ")  # single-line
+                ax.annotate(
+                    label, xy=(cr, 0),
+                    fontsize=7, ha="right", va="bottom",
+                    color="gray", style="italic",
+                    rotation=30,
+                    xytext=(0, 4), textcoords="offset points",
+                )
+
+        ax.legend(fontsize=8, loc="upper left")
+
     fig.suptitle("Effect of Communication Range on Throughput (Steady-State)",
-                 fontsize=15, y=1.02)
+                 fontsize=13, y=1.02)
     fig.tight_layout()
     _savefig(fig, plot_dir, "throughput_vs_comm_range_ss")
 
@@ -2017,7 +2100,7 @@ def plot_allocation_scalability(df: pd.DataFrame, plot_dir: str) -> None:
         ax.errorbar(
             g["task_arrival_rate"], g["mean"], yerr=g["std"],
             label=get_label(cfg), color=get_color(cfg),
-            marker="o", capsize=4, linewidth=2,
+            marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2,
         )
         # Mark partial-data points (ar=0.2) with an open marker overlay
         partial = g[~g["task_arrival_rate"].isin(SS_PRIMARY_ARRIVAL_RATES)]
@@ -2057,18 +2140,18 @@ def plot_allocation_scalability(df: pd.DataFrame, plot_dir: str) -> None:
         ax.errorbar(
             g_clean["task_arrival_rate"], g_clean["mean"], yerr=g_clean["std"],
             label=get_label(cfg), color=get_color(cfg),
-            marker="o", capsize=4, linewidth=2,
+            marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2,
         )
     ax.set_xlabel("Arrival Rate (tasks/ts/station)")
     ax.set_ylabel("Avg Allocation Time per Call (ms)")
-    ax.set_title("GCBBA vs SGA (linear scale, primary rates)\n(CBBA off-chart; SGA scales worse than GCBBA)")
+    ax.set_title("LCBA vs SGA (linear scale, primary rates)\n(CBBA off-chart; SGA scales worse than LCBA)")
     ax.legend(fontsize=9)
     ax.grid(alpha=0.3)
     ax.set_ylim(bottom=0)
 
     fig.suptitle(
-        "Allocation Scalability: GCBBA vs CBBA vs SGA\n"
-        "(Both CBBA and SGA scale super-linearly; GCBBA remains most tractable)",
+        "Allocation Scalability: LCBA vs CBBA vs SGA\n"
+        "(Both CBBA and SGA scale super-linearly; LCBA remains most tractable)",
         fontsize=13, y=1.03,
     )
     fig.tight_layout()
@@ -2132,7 +2215,7 @@ def generate_latex_table_ss(df: pd.DataFrame, plot_dir: str) -> None:
     lines = [
         r"\begin{table}[htbp]",
         r"\centering",
-        r"\caption{Experimental Results (Steady-State Mode): GCBBA, CBBA, SGA}",
+        r"\caption{Experimental Results (Steady-State Mode): LCBA, CBBA, SGA}",
         r"\label{tab:results_ss}",
         r"\small",
         r"\begin{tabular}{" + col_spec + r"}",
@@ -2220,7 +2303,7 @@ def plot_task_execution_quality(df: pd.DataFrame, plot_dir: str) -> None:
             g = sub.groupby(x_col)["distance_per_task"].agg(["mean", "std"]).reset_index()
             ax.errorbar(g[x_col], g["mean"], yerr=g["std"],
                         label=get_label(cfg), color=get_color(cfg),
-                        marker="o", capsize=4, linewidth=2)
+                        marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2)
         ax.set_xlabel(x_label)
         ax.set_ylabel("Distance per Completed Task (grid steps)")
         ax.set_title(f"Path Efficiency ({label_prefix})\n(lower = tighter assignments)")
@@ -2235,7 +2318,7 @@ def plot_task_execution_quality(df: pd.DataFrame, plot_dir: str) -> None:
             g = sub.groupby(x_col)["task_abort_rate"].agg(["mean", "std"]).reset_index()
             ax.errorbar(g[x_col], g["mean"] * 100, yerr=g["std"] * 100,
                         label=get_label(cfg), color=get_color(cfg),
-                        marker="s", capsize=4, linewidth=2)
+                        marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2)
         ax.set_xlabel(x_label)
         ax.set_ylabel("Task Abort Rate (% of completed tasks)")
         ax.set_title(f"Charging-Induced Task Aborts ({label_prefix})\n(lower = less disruptive energy management)")
@@ -2369,7 +2452,8 @@ def plot_scaling_exponent(df: pd.DataFrame, plot_dir: str) -> None:
                 continue
 
             ax.scatter(g[x_col], g["mean"], color=get_color(cfg),
-                       s=60, zorder=5, edgecolors="black", linewidth=0.4)
+                       marker=get_marker(cfg), s=60, zorder=5,
+                       edgecolors="black", linewidth=0.4)
 
             # Fit log(y) = k*log(x) + log(a)
             log_x = np.log(g[x_col].values.astype(float))
@@ -2380,6 +2464,7 @@ def plot_scaling_exponent(df: pd.DataFrame, plot_dir: str) -> None:
             x_fit = np.linspace(g[x_col].min(), g[x_col].max(), 100)
             y_fit = np.exp(log_a) * x_fit ** k
             ax.plot(x_fit, y_fit, color=get_color(cfg), linewidth=2,
+                    linestyle=get_linestyle(cfg),
                     label=f"{get_label(cfg)}  (k={k:.2f})")
 
         ax.set_xscale("log")
@@ -2417,7 +2502,7 @@ def plot_scaling_exponent(df: pd.DataFrame, plot_dir: str) -> None:
 
         fig.suptitle(
             f"Allocation Scaling Exponents ({label_prefix}): time ∝ n^k\n"
-            "(higher k = worse scaling; GCBBA should show smallest k)",
+            "(higher k = worse scaling; LCBA should show smallest k)",
             fontsize=13, y=1.03,
         )
         fig.tight_layout()
@@ -2473,7 +2558,7 @@ def plot_decentralization_penalty(df: pd.DataFrame, plot_dir: str) -> None:
                 if valid_crs:
                     ax.errorbar(valid_crs, penalties, yerr=penalty_stds,
                                 label=get_label(cfg), color=get_color(cfg),
-                                marker="o", capsize=4, linewidth=2)
+                                marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2)
 
             ax.axhline(0, color="black", linestyle="--", linewidth=1.2,
                        label="SGA baseline (0% penalty)")
@@ -2525,7 +2610,7 @@ def plot_decentralization_penalty(df: pd.DataFrame, plot_dir: str) -> None:
                 if valid_crs:
                     ax.errorbar(valid_crs, penalties, yerr=penalty_stds,
                                 label=get_label(cfg), color=get_color(cfg),
-                                marker="o", capsize=4, linewidth=2)
+                                marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2)
 
             ax.axhline(0, color="black", linestyle="--", linewidth=1.2,
                        label="SGA baseline (0% penalty)")
@@ -2583,7 +2668,7 @@ def plot_batch_allocation_scalability(df: pd.DataFrame, plot_dir: str) -> None:
         ax.errorbar(
             g["tasks_per_induct"], g["mean"], yerr=g["std"],
             label=get_label(cfg), color=get_color(cfg),
-            marker="o", capsize=4, linewidth=2,
+            marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2,
         )
     ax.axhline(1000, color="red", linestyle="--", linewidth=1.2, alpha=0.7,
                label="1 s / call (feasibility threshold)")
@@ -2603,18 +2688,18 @@ def plot_batch_allocation_scalability(df: pd.DataFrame, plot_dir: str) -> None:
         ax.errorbar(
             g["tasks_per_induct"], g["mean"], yerr=g["std"],
             label=label, color=get_color(cfg),
-            marker="o", capsize=4, linewidth=2,
+            marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2,
         )
     ax.set_xlabel("Initial Tasks per Induct Station")
     ax.set_ylabel("Avg Allocation Time per Call (ms)")
-    ax.set_title("GCBBA vs SGA (linear scale, batch)\n(CBBA off-chart; SGA scales 3× worse than GCBBA at tpi=20)")
+    ax.set_title("LCBA vs SGA (linear scale, batch)\n(CBBA off-chart; SGA scales 3× worse than LCBA at tpi=20)")
     ax.legend(fontsize=9)
     ax.grid(alpha=0.3)
     ax.set_ylim(bottom=0)
 
     fig.suptitle(
-        "Batch Allocation Scalability: GCBBA vs CBBA vs SGA\n"
-        "(Both CBBA and SGA scale super-linearly with task count; GCBBA remains tractable)",
+        "Batch Allocation Scalability: LCBA vs CBBA vs SGA\n"
+        "(Both CBBA and SGA scale super-linearly with task count; LCBA remains tractable)",
         fontsize=13, y=1.03,
     )
     fig.tight_layout()
@@ -2659,7 +2744,7 @@ def plot_peak_vs_avg_allocation_time(df: pd.DataFrame, plot_dir: str) -> None:
             g = sub.groupby(x_col)["avg_gcbba_time_ms"].agg(["mean", "std"]).reset_index()
             ax.errorbar(g[x_col], g["mean"], yerr=g["std"],
                         label=get_label(cfg), color=get_color(cfg),
-                        marker="o", capsize=4, linewidth=2)
+                        marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2)
         ax.axhline(1000, color="red", linestyle="--", linewidth=1, alpha=0.7,
                    label="1 s threshold")
         ax.set_xlabel(x_label)
@@ -2676,7 +2761,7 @@ def plot_peak_vs_avg_allocation_time(df: pd.DataFrame, plot_dir: str) -> None:
             g = sub.groupby(x_col)["max_gcbba_time_ms"].agg(["mean", "std"]).reset_index()
             ax.errorbar(g[x_col], g["mean"], yerr=g["std"],
                         label=get_label(cfg), color=get_color(cfg),
-                        marker="s", capsize=4, linewidth=2, linestyle="--")
+                        marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2)
         ax.axhline(1000, color="red", linestyle="--", linewidth=1, alpha=0.7,
                    label="1 s threshold")
         ax.set_xlabel(x_label)
@@ -2696,7 +2781,7 @@ def plot_peak_vs_avg_allocation_time(df: pd.DataFrame, plot_dir: str) -> None:
                 cv = (g["std_gcbba_time_ms"] / g["avg_gcbba_time_ms"].replace(0, np.nan) * 100).fillna(0)
                 ax.plot(g[x_col], cv,
                         label=get_label(cfg), color=get_color(cfg),
-                        marker="^", linewidth=2, linestyle=":")
+                        marker=get_marker(cfg), linestyle=get_linestyle(cfg), linewidth=2)
             ax.axhline(100, color="gray", linestyle="--", linewidth=1.2, alpha=0.7,
                        label="CV = 100% (std = mean)")
         else:
@@ -2764,7 +2849,7 @@ def plot_queue_drop_rate(df: pd.DataFrame, plot_dir: str) -> None:
             g["std_pct"]  = g["std"]  * 100
             ax.errorbar(g["task_arrival_rate"], g["mean_pct"], yerr=g["std_pct"],
                         label=get_label(cfg), color=get_color(cfg),
-                        marker="o", capsize=4, linewidth=2)
+                        marker=get_marker(cfg), linestyle=get_linestyle(cfg), capsize=4, linewidth=2)
 
         conn_str = "Disconnected" if cr < CONNECTIVITY_THRESHOLD else "Well Connected"
         ax.set_xlabel("Arrival Rate (tasks/ts/station)")
@@ -2776,7 +2861,7 @@ def plot_queue_drop_rate(df: pd.DataFrame, plot_dir: str) -> None:
 
     fig.suptitle(
         "Task Queue Drop Rate vs Arrival Rate (Steady-State)\n"
-        "(Higher drop rate = allocation too slow to clear queue; GCBBA should be lowest)",
+        "(Higher drop rate = allocation too slow to clear queue; LCBA should be lowest)",
         fontsize=13, y=1.03,
     )
     fig.tight_layout()
@@ -2854,7 +2939,7 @@ def plot_batch_failure_heatmap(df: pd.DataFrame, plot_dir: str) -> None:
 
     fig.suptitle(
         "Batch Task Completion Rate: Load × Connectivity Heatmap\n"
-        "(Green=100% success; Red=failure; GCBBA should stay green across more cells)",
+        "(Green=100% success; Red=failure; LCBA should stay green across more cells)",
         fontsize=13, y=1.03,
     )
     fig.tight_layout()
@@ -2943,7 +3028,10 @@ def plot_throughput_rampup(exp_dir: str, df: pd.DataFrame, plot_dir: str) -> Non
             if hi > lo:
                 inst_tp[i] = (mean_cot[hi] - mean_cot[lo]) / (hi - lo)
 
-        ax.plot(t, inst_tp, label=get_label(cfg), color=get_color(cfg), linewidth=2)
+        me = max(1, len(t) // 10)
+        ax.plot(t, inst_tp, label=get_label(cfg), color=get_color(cfg), linewidth=2,
+                marker=get_marker(cfg), markevery=me, markersize=get_markersize(cfg),
+                linestyle=get_linestyle(cfg))
         any_plotted = True
 
     if not any_plotted:
@@ -3161,7 +3249,6 @@ def plot_compute_budget_breakdown(df: pd.DataFrame, plot_dir: str) -> None:
 
         # ── Right: per-call cost scatter ──────────────────────────────
         ax = axes[1]
-        markers = ["o", "s", "^", "D"]
         for i, cfg in enumerate(methods_here):
             sub = dfc[dfc["config_name"] == cfg]
             g = (sub.groupby(x_col)[["avg_gcbba_time_ms", "avg_path_plan_time_ms"]]
@@ -3170,7 +3257,7 @@ def plot_compute_budget_breakdown(df: pd.DataFrame, plot_dir: str) -> None:
                 continue
             ax.scatter(
                 g["avg_gcbba_time_ms"], g["avg_path_plan_time_ms"],
-                color=get_color(cfg), marker=markers[i % len(markers)],
+                color=get_color(cfg), marker=get_marker(cfg),
                 s=80, zorder=5, edgecolors="black", linewidth=0.5,
                 label=get_label(cfg),
             )
@@ -3244,9 +3331,9 @@ def plot_step_wall_time(df: pd.DataFrame, plot_dir: str) -> None:
         rows.append(("Batch", _batch_df(df), CANONICAL_BATCH_METHODS,
                      "tasks_per_induct", "Initial Tasks per Induct Station"))
 
-    fig, axes = plt.subplots(len(rows), 2, figsize=(13, 5 * len(rows)))
-    if len(rows) == 1:
-        axes = [axes]  # ensure 2D indexing
+    n_panels = len(rows) * 2
+    fig, axes_all = plt.subplots(1, n_panels, figsize=(6.5 * n_panels, 5), squeeze=False)
+    axes_flat = axes_all[0]  # 1-D array of all panels
 
     for row_idx, (label_prefix, dfc, methods, x_col, x_label) in enumerate(rows):
         methods_here = _canonical_methods_present(dfc, methods)
@@ -3255,7 +3342,7 @@ def plot_step_wall_time(df: pd.DataFrame, plot_dir: str) -> None:
             ("avg_step_time_ms", "Avg Step Time (ms)", "Average (mean ± std)"),
             ("max_step_time_ms", "Max Step Time (ms)", "Worst-Case (peak)"),
         ]):
-            ax = axes[row_idx][col_idx]
+            ax = axes_flat[row_idx * 2 + col_idx]
 
             for cfg in methods_here:
                 sub = dfc[dfc["config_name"] == cfg]
@@ -3266,9 +3353,9 @@ def plot_step_wall_time(df: pd.DataFrame, plot_dir: str) -> None:
                 ax.errorbar(
                     g[x_col], g["mean"], yerr=yerr,
                     label=get_label(cfg), color=get_color(cfg),
-                    marker="o" if col_idx == 0 else "s",
+                    marker=get_marker(cfg),
+                    linestyle=get_linestyle(cfg),
                     capsize=4, linewidth=2,
-                    linestyle="-" if col_idx == 0 else "--",
                 )
 
             ax.axhline(1000, color="red", linestyle="--", linewidth=1.5, alpha=0.8,
@@ -3451,10 +3538,12 @@ def plot_queue_depth_timeseries(exp_dir: str, df: pd.DataFrame, plot_dir: str) -
         t = np.arange(len(smooth))
 
         color = get_color(cfg)
-        ls    = "-"
+        ls    = get_linestyle(cfg)
         label = get_label(cfg)
 
-        ax.plot(t, smooth, color=color, linestyle=ls, linewidth=2, label=label)
+        me = max(1, len(t) // 10)
+        ax.plot(t, smooth, color=color, linestyle=ls, linewidth=2, label=label,
+                marker=get_marker(cfg), markevery=me, markersize=get_markersize(cfg))
         ax.fill_between(
             t,
             np.maximum(0, smooth - std_qd),
