@@ -777,7 +777,13 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
 #  Experiment config generator
 # ─────────────────────────────────────────────────────────────────
 
-def get_experiment_configs(mode: str = "full", num_agents: int = 6) -> List[Dict]:
+def get_experiment_configs(
+    mode: str = "full",
+    num_agents: int = 6,
+    num_induct: int = 8,
+    grid_w: int = 30,
+    grid_h: int = 30,
+) -> List[Dict]:
     """
     Build the list of experimental configurations to run.
 
@@ -793,35 +799,56 @@ def get_experiment_configs(mode: str = "full", num_agents: int = 6) -> List[Dict
       "cbba"           → standard CBBA baseline
       "sga"            → centralized SGA baseline
 
-    Arrival rate rationale (8 stations, ~6 agents, ~20 ts/task):
-      Capacity ≈ 0.3 tasks/ts total → per-station ≈ 0.037 tasks/ts/station.
-      0.01 → ~27% capacity (light)  |  0.03 → ~81% (near-knee)
-      0.05 → ~135% (slight overload)|  0.1  → ~270% (heavy)
-      0.15 → ~400%                   |  0.2  → ~540% (extreme)
-      Sweep captures light load, the saturation knee (~0.037), and severe overload.
+    Arrival rates and comm ranges are derived analytically from map geometry:
+
+      capacity = num_agents / (20 ts/task * num_induct_stations)  [tasks/ts/station]
+        — the rate at which agents can service one induct station at full utilisation.
+        Rates are expressed as multiples of capacity so that the sweep always brackets
+        the saturation knee regardless of map size.
+
+      diagonal = sqrt(grid_w² + grid_h²)  [grid cells]
+        — used to scale comm ranges so they span "nearly disconnected" to "fully
+        connected" consistently across maps of different sizes.
     """
     configs = []
 
+    # ── Map-derived sweep anchors ──────────────────────────────────────────
+    capacity = num_agents / (20.0 * num_induct)   # tasks/ts/station at full utilisation
+    diagonal = (grid_w ** 2 + grid_h ** 2) ** 0.5
+
     if mode == "quick":
         seeds = [42]
-        arrival_rates = [0.05]
-        comm_ranges = [13, 45]
+        # Knee (1×) and a heavy-load point (2×) only
+        capacity_fracs = [1.0, 2.0]
+        # One sparse range (35% diagonal) and one full-connectivity range
+        range_fracs = [0.35, 1.2]
         rerun_intervals = [50]
         batch_task_counts = [80]
 
     elif mode == "medium":
         seeds = [42, 123, 456]
-        arrival_rates = [0.01, 0.03, 0.05, 0.1]
-        comm_ranges = [5, 8, 13, 45]
+        # Light → knee → overload → heavy
+        capacity_fracs = [0.25, 0.5, 1.0, 2.0]
+        # Near-disconnected → sparse → moderate → full
+        range_fracs = [0.1, 0.2, 0.35, 1.2]
         rerun_intervals = [25, 50, 100]
         batch_task_counts = [40, 80, 160]
 
     else:  # full
         seeds = [42, 123, 456, 789, 1024]
-        arrival_rates = [0.02, 0.04, 0.06, 0.08, 0.1, 0.12, 0.14, 0.16, 0.18, 0.2]
-        comm_ranges = [3, 5, 8, 13, 20, 45]
+        # 10 points from 25% to 300% of capacity
+        capacity_fracs = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
+        # 6 points spanning near-disconnected to full-connectivity
+        range_fracs = [0.05, 0.1, 0.2, 0.35, 0.6, 1.2]
         rerun_intervals = [10, 25, 50, 100, 200]
         batch_task_counts = [20, 40, 80, 160]
+
+    arrival_rates = sorted(set(
+        max(0.001, round(f * capacity, 4)) for f in capacity_fracs
+    ))
+    comm_ranges = sorted(set(
+        max(3, round(f * diagonal)) for f in range_fracs
+    ))
 
     STUCK_THRESHOLD = 15
     MAX_TIMESTEPS = 1500
@@ -875,8 +902,9 @@ def get_experiment_configs(mode: str = "full", num_agents: int = 6) -> List[Dict
             })
 
         # ── Standard CBBA baseline ───────────────────────────────────
-        # C2: cap timesteps at high arrival rates to prevent multi-hour runs
-        cbba_sga_max_ts = CBBA_SGA_SS_CAPPED_TIMESTEPS if ar >= 0.1 else MAX_TIMESTEPS
+        # C2: cap timesteps when arrival rate >= 2× capacity (heavily overloaded).
+        # At that point the queue is saturated regardless; a shorter window is sufficient.
+        cbba_sga_max_ts = CBBA_SGA_SS_CAPPED_TIMESTEPS if ar >= 2.0 * capacity else MAX_TIMESTEPS
         configs.append({
             "config_name": "cbba",
             "allocation_method": "cbba",
@@ -1255,8 +1283,8 @@ def main():
     with open(config_path) as _f:
         _cfg = _yaml.safe_load(_f)
     _params = _cfg["create_gridworld_node"]["ros__parameters"]
-    _agent_flat = _params["agent_positions"]
-    _map_num_agents = len(_agent_flat) // 4
+    _map_num_agents = len(_params["agent_positions"]) // 4
+    _map_num_induct  = len(_params["induct_stations"]) // 4
     _grid_w = _params.get("grid_width", 30)
     _grid_h = _params.get("grid_height", 30)
     _map_plan_time = max(200, _grid_w + _grid_h)
@@ -1267,7 +1295,13 @@ def main():
     )
     os.makedirs(output_dir, exist_ok=True)
 
-    all_configs = get_experiment_configs(args.mode, num_agents=_map_num_agents)
+    all_configs = get_experiment_configs(
+        args.mode,
+        num_agents=_map_num_agents,
+        num_induct=_map_num_induct,
+        grid_w=_grid_w,
+        grid_h=_grid_h,
+    )
 
     # ── Filter configs based on --config flag ──
     if args.config == "ss_only":
