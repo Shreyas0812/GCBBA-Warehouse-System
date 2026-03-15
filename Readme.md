@@ -133,7 +133,7 @@ Each environment includes obstacle regions (perimeter walls, structural columns,
 ### Installation
 
 ```bash
-git clone https://github.com/<your-username>/GCBBA_Warehouse_System.git
+git clone https://github.com/shreyas0812/GCBBA_Warehouse_System.git
 cd GCBBA_Warehouse_System
 
 python3 -m venv .venv
