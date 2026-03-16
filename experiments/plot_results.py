@@ -185,13 +185,13 @@ LABELS = {
     "dynamic":       "Dynamic LCBA (ri=50)",
     "cbba":          "CBBA (standard)",
     "sga":           "SGA (centralized upper bound)",
-    "dmchba":        "DMCHBA (distributed)",
+    "dmchba":        "DMCHBA (Hungarian-based distributed)",
     # Batch variants
     "static_batch":  "Static LCBA (batch)",
     "dynamic_batch": "Dynamic LCBA (batch, ri=50)",
     "cbba_batch":    "CBBA (batch)",
     "sga_batch":     "SGA (batch, centralized)",
-    "dmchba_batch":  "DMCHBA (batch, distributed)",
+    "dmchba_batch":  "DMCHBA (batch, Hungarian-based distributed)",
     # ri sensitivity
     "dynamic_ri10":  "Dynamic LCBA (ri=10)",
     "dynamic_ri25":  "Dynamic LCBA (ri=25)",
