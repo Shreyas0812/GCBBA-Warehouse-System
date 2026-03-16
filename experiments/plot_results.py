@@ -1245,7 +1245,7 @@ def plot_optimality_ratio(df: pd.DataFrame, plot_dir: str) -> None:
     dfc_b = _batch_df(df)
     if not dfc_b.empty and "optimality_ratio" in dfc_b.columns:
         valid_b = dfc_b[dfc_b["optimality_ratio_valid"] == True].copy()
-        plot_methods_b = [m for m in ["static_batch", "dynamic_batch", "cbba_batch"]
+        plot_methods_b = [m for m in ["static_batch", "dynamic_batch", "cbba_batch", "dmchba_batch"]
                           if m in valid_b["config_name"].unique()]
 
         if not valid_b.empty and plot_methods_b:
@@ -1299,7 +1299,7 @@ def plot_optimality_ratio(df: pd.DataFrame, plot_dir: str) -> None:
     dfc_s = _ss_clean_df(df)
     if not dfc_s.empty and "throughput_ratio" in dfc_s.columns:
         valid_s = dfc_s[dfc_s["throughput_ratio_valid"] == True].copy()
-        plot_methods_s = [m for m in ["static", "dynamic", "cbba"]
+        plot_methods_s = [m for m in ["static", "dynamic", "cbba", "dmchba"]
                           if m in valid_s["config_name"].unique()]
 
         if not valid_s.empty and plot_methods_s:
