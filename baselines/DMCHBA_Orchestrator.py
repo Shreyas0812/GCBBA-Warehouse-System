@@ -59,6 +59,11 @@ class DMCHBA_Orchestrator:
 
         self.start_time = time.perf_counter()
 
+        # Initialize Tasks
+        self.tasks = []
+        for j in range(self.nt):
+            self.tasks.append(GCBBA_Task(id=self.task_ids[j], char_t=self.char_t[j], grid_map=self.grid_map))
+
         # Initialize Agent
         self.agent_pos = []
         self.agent_speed = []
@@ -125,12 +130,149 @@ class DMCHBA_Orchestrator:
         Clone Agents
         Build Cost Matrix
         Hungarian Assignment
+        Map clone assignments back to real agents and tasks
         TSP Ordering
         """
 
-        return None  # Placeholder for assigned task indices in this component
+        n_agents = len(agent_indices)
+        n_tasks = len(task_indices)
+
+        if n_agents == 0 or n_tasks == 0:
+            return set()  # No assignments possible
+
+        # Step 1: Determine number of clones per agent
+        clones_per_agent = ceil(n_tasks / n_agents)
+        total_clones = clones_per_agent * n_agents
+
+        # Step 2: Build cost matrix (total_clones x n_tasks)
+        # Rows: clones, Columns: tasks
+        cost_matrix = np.full((total_clones, n_tasks), fill_value=1e9)  # Large cost for unassignable pairs
+
+        for a_local, a_global in enumerate(agent_indices):
+            for clone_idx in range(clones_per_agent):
+                clone_row = a_local * clones_per_agent + clone_idx
+                for t_local, t_global in enumerate(task_indices):
+                    task = self.tasks[t_global]
+
+                    # Cost: agent -> induct -> eject 
+                    dist_to_induct = self._get_distance(self.agent_pos[a_global], self.agent_pos_grid[a_global], task.induct_pos, task.induct_grid)
+                    dist_induct_to_eject = self._get_distance(task.induct_pos, task.induct_grid, task.eject_pos, task.eject_grid)
+
+                    speed = self.agent_speed[a_global]
+                    cost_matrix[clone_row, t_local] = (dist_to_induct + dist_induct_to_eject) / speed
+
+        if total_clones > n_tasks:
+            # Pad cost matrix to be square by adding dummy tasks with high cost
+            padding = np.full((total_clones, total_clones - n_tasks), fill_value=1e9)  # Large cost for dummy tasks
+            cost_matrix = np.hstack((cost_matrix, padding))
+
+        # Step 3: Hungarian Assignment
+        row_ind, col_ind = linear_sum_assignment(cost_matrix)
+
+        # Step 4: Map clone assignments back to real agents and tasks
+        agent_task_map = {a_local: [] for a_local in range(n_agents)}
+        assigned_task_indices = set()
+
+        for row, col in zip(row_ind, col_ind):
+            if col < n_tasks: # Ignore dummy task assignments
+                a_local = row // clones_per_agent
+                t_global = task_indices[col]
+                agent_task_map[a_local].append(col)  # Map back to global task index
+                assigned_task_indices.add(col)
+
+        # Step 5: TSP Ordering (2-opt) for each agent's assigned tasks
+        for a_local, a_global in enumerate(agent_indices):
+            local_task_cols = agent_task_map[a_local]
+            if len(local_task_cols) == 0:
+                continue  # No tasks assigned to this agent
+
+            global_task_indices = [task_indices[t_col] for t_col in local_task_cols]
+
+            if len(global_task_indices) == 0:
+                agent_paths[a_global] = self.tasks[global_task_indices][0].id  # Single task, no ordering needed
+            else:
+                # 2-opt TSP ordering
+                best_order = self._two_opt_tsp(a_global, global_task_indices)
+                agent_paths[a_global] = [self.tasks[t_idx].id for t_idx in best_order]
+
+        return {task_indices[t_col] for t_col in assigned_task_indices}
+
+    # tsp 2-opt heuristic for ordering tasks assigned to an agent
+    def _two_opt_tsp(self, agent_idx, task_global_indices):
+        """
+        2-opt TSP to order tasks for a single agent.
+        """    
+        n = len(task_global_indices)
+        if n <= 2:
+            return task_global_indices  # No ordering needed for 2 or fewer tasks
+        
+        # Initial order (as assigned by Hungarian)
+        route = list(task_global_indices)
+
+        best_cost = self.total_tour_cost(route, agent_idx)
+        improved = True
+
+        while improved:
+            improved = False
+            for i in range(1, n - 1):
+                for j in range(i + 1, n):
+                    new_route = route[:i] + route[i:j+1][::-1] + route[j+1:]
+                    new_cost = self.total_tour_cost(new_route, agent_idx)
+                    if new_cost < best_cost - 1e-9:  # Consider a small threshold for improvement
+                        route = new_route
+                        best_cost = new_cost
+                        improved = True
+        
+        return route
+
+    # Helper functions to compute distances and costs
+    def route_cost(self, from_pos, from_grid, to_task_idx, agent_idx):
+        """
+        Cost to travel to task and execute it (induct + eject).
+        """
+        task = self.tasks[to_task_idx]
+        dist_to_induct = self._get_distance(from_pos, from_grid, task.induct_pos, task.induct_grid)
+        dist_induct_to_eject = self._get_distance(task.induct_pos, task.induct_grid, task.eject_pos, task.eject_grid)
+        return (dist_to_induct + dist_induct_to_eject) / self.agent_speed[agent_idx]
     
+    def leg_cost(self, from_task_idx, to_task_idx, agent_idx):
+        """
+        Cost to travel between two tasks (eject of first to induct of second).
+        """
+        task_from = self.tasks[from_task_idx]
+        
+        return self.route_cost(task_from.eject_pos, task_from.eject_grid, to_task_idx, agent_idx)
     
+    def total_tour_cost(self, route, agent_idx):
+        """
+        Total cost of a given route (sequence of task indices) for an agent.
+        """
+        cost = self.route_cost(self.agent_pos[agent_idx], self.agent_pos_grid[agent_idx], route[0], agent_idx)  # Start to first task
+        for k in range(1, len(route)):
+            cost += self.leg_cost(route[k-1], route[k], agent_idx)  # Between tasks
+        return cost
+    
+    def _get_distance(self, pos, pos_grid, target_pos, target_grid):
+        """
+        Get distance between two positions, using BFS if grid info is available.
+        """
+        if self.grid_map is None or pos_grid is None or target_grid is None:
+            return np.linalg.norm(np.array(pos) - np.array(target_pos))
+        
+        # BFS from target (targer is station)
+        table = self.grid_map.bfs_distances_from_station.get(target_grid)
+        if table is not None and pos_grid in table:
+            return table[pos_grid]
+        
+        # BFS from pos (pos is station)
+        table = self.grid_map.bfs_distances_from_station.get(pos_grid)
+        if table is not None and target_grid in table:
+            return table[target_grid]
+        
+        # Fallback to Euclidean if BFS info is missing
+        return np.linalg.norm(np.array(pos) - np.array(target_pos))
+
+
     def _compute_score(self, agent_paths):
         """
         Compute total score anbd makespan for the current assignment.
