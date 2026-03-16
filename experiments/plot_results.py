@@ -117,11 +117,13 @@ COLORS = {
     "dynamic":       "#d62728",   # red  (canonical ri=50)
     "cbba":          "#ff7f0e",   # orange
     "sga":           "#2ca02c",   # green
+    "dmchba":        "#9467bd",   # purple
     # Batch variants -- same hue as steady-state counterparts
     "static_batch":  "#1f77b4",
     "dynamic_batch": "#d62728",
     "cbba_batch":    "#ff7f0e",
     "sga_batch":     "#2ca02c",
+    "dmchba_batch":  "#9467bd",
     # Sensitivity sweep -- shades of red/pink for dynamic_ri* configs
     "dynamic_ri10":  "#8B0000",  # dark red
     "dynamic_ri25":  "#c0392b",  # red-crimson
@@ -136,11 +138,13 @@ MARKERS = {
     "dynamic":       "s",    # square   -- Dynamic LCBA
     "cbba":          "^",    # triangle -- CBBA baseline
     "sga":           "*",    # star     -- SGA centralized
+    "dmchba":        "D",    # diamond  -- DMCHBA baseline
     # Batch variants -- same marker as SS counterpart
     "static_batch":  "o",
     "dynamic_batch": "s",
     "cbba_batch":    "^",
     "sga_batch":     "*",
+    "dmchba_batch":  "D",
     # Sensitivity sweep
     "dynamic_ri10":  "s",
     "dynamic_ri25":  "s",
@@ -150,21 +154,23 @@ MARKERS = {
 }
 
 MARKER_SIZES = {
-    "static": 7, "dynamic": 7, "cbba": 7, "sga": 9,
-    "static_batch": 7, "dynamic_batch": 7, "cbba_batch": 7, "sga_batch": 9,
+    "static": 7, "dynamic": 7, "cbba": 7, "sga": 9, "dmchba": 7,
+    "static_batch": 7, "dynamic_batch": 7, "cbba_batch": 7, "sga_batch": 9, "dmchba_batch": 7,
 }
 
 # -- Line styles (distinct per method for print / colorblind readability) --
 LINESTYLES = {
-    "static":        "--",    # dashed       -- Static LCBA
-    "dynamic":       "-",     # solid        -- Dynamic LCBA
-    "cbba":          "-.",    # dash-dot     -- CBBA
-    "sga":           ":",     # dotted       -- SGA
+    "static":        "--",           # dashed        -- Static LCBA
+    "dynamic":       "-",            # solid         -- Dynamic LCBA
+    "cbba":          "-.",           # dash-dot      -- CBBA
+    "sga":           ":",            # dotted        -- SGA
+    "dmchba":        (0, (5, 1)),    # dense long-dash -- DMCHBA
     # Batch variants -- same style as SS counterpart
     "static_batch":  "--",
     "dynamic_batch": "-",
     "cbba_batch":    "-.",
     "sga_batch":     ":",
+    "dmchba_batch":  (0, (5, 1)),
     # Sensitivity sweep -- all dynamic variants use dashed
     "dynamic_ri10":  "--",
     "dynamic_ri25":  "--",
@@ -179,11 +185,13 @@ LABELS = {
     "dynamic":       "Dynamic LCBA (ri=50)",
     "cbba":          "CBBA (standard)",
     "sga":           "SGA (centralized upper bound)",
+    "dmchba":        "DMCHBA (distributed)",
     # Batch variants
     "static_batch":  "Static LCBA (batch)",
     "dynamic_batch": "Dynamic LCBA (batch, ri=50)",
     "cbba_batch":    "CBBA (batch)",
     "sga_batch":     "SGA (batch, centralized)",
+    "dmchba_batch":  "DMCHBA (batch, distributed)",
     # ri sensitivity
     "dynamic_ri10":  "Dynamic LCBA (ri=10)",
     "dynamic_ri25":  "Dynamic LCBA (ri=25)",
@@ -231,8 +239,8 @@ def get_linestyle(config_name: str) -> str:
 
 
 # -- Method sets ----------------------------------------------------
-CANONICAL_SS_METHODS    = ["static", "dynamic", "cbba", "sga"]
-CANONICAL_BATCH_METHODS = ["static_batch", "dynamic_batch", "cbba_batch", "sga_batch"]
+CANONICAL_SS_METHODS    = ["static", "dynamic", "cbba", "sga", "dmchba"]
+CANONICAL_BATCH_METHODS = ["static_batch", "dynamic_batch", "cbba_batch", "sga_batch", "dmchba_batch"]
 CANONICAL_METHODS       = CANONICAL_SS_METHODS   # backward-compat alias
 
 # Arrival rates with complete, uniform data (all methods × all CRs × all seeds).
