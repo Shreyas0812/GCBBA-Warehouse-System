@@ -277,3 +277,57 @@ class DMCHBA_Orchestrator:
         """
         Compute total score anbd makespan for the current assignment.
         """        
+        total_score = 0
+        makespan = 0
+
+        for i in range(self.na):
+            if not agent_paths[i]:  # No tasks assigned to this agent
+                continue
+
+            path_score = self._evaluate_path(i, agent_paths[i])
+            completion_time = -path_score  # Since score is negative cost
+
+            total_score += path_score
+
+            if completion_time > makespan:
+                makespan = completion_time
+        
+        return total_score, makespan
+    
+    def _evaluate_path(self, agent_idx, path):
+        """
+        Evaluate RPT score for a given agent's path (sequence of task IDs).
+        """
+        cur_pos = self.agent_pos[agent_idx]
+        cur_grid = self.agent_pos_grid[agent_idx]
+        speed = self.agent_speed[agent_idx]
+        score = 0
+        time_elapsed = 0
+
+        for task_id in path:
+            task = self._get_task_by_id(task_id)
+
+            # Travel to induct
+            time_elapsed += self._get_distance(cur_pos, cur_grid, task.induct_pos, task.induct_grid) / speed
+
+            # Execute task (induct + eject)
+            time_elapsed += self._get_distance(task.induct_pos, task.induct_grid, task.eject_pos, task.eject_grid) / speed
+
+            score -= time_elapsed  # RPT: negative completion time
+
+            time_elapsed = 0  # Reset time for next task since RPT only cares about completion time of each task
+
+            # Update position for next leg
+            cur_pos = task.eject_pos
+            cur_grid = task.eject_grid
+
+        return score
+    
+    def _get_task_by_id(self, task_id):
+        """
+        Helper to get task object by its ID.
+        """
+        for task in self.tasks:
+            if task.id == task_id:
+                return task
+        return None  # Should not happen if IDs are consistent
