@@ -3,6 +3,7 @@ Integration Orchestrator for Multi-Agent Task Allocation and Path Planning
 - "gcbba" (default): GCBBA with ADD bundle building + global consensus
 - "sga": Centralized Sequential Greedy Algorithm
 - "cbba": Standard CBBA with FULLBUNDLE + local consensus
+- "dmchba": Distributed Matching-by-Clones Hungarian (Samiei & Sun, IEEE T-RO 2024)
 
 Path Planner: Priority-based Time-Expanded A* with reservation table for collision avoidance
 """
@@ -23,6 +24,7 @@ from collision_avoidance.time_based_collision_avoidance import TimeBasedCollisio
 from gcbba.GCBBA_Orchestrator import GCBBA_Orchestrator
 from baselines.SGA_Orchestrator import SGA_Orchestrator
 from baselines.CBBA_Orchestrator import CBBA_Orchestrator
+from baselines.DMCHBA_Orchestrator import DMCHBA_Orchestrator
 
 from gcbba.tools_warehouse import agent_init, create_graph_with_range
 

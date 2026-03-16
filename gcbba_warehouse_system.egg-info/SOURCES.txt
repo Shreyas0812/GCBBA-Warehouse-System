@@ -1,6 +1,7 @@
 setup.py
 baselines/CBBA_Agent.py
 baselines/CBBA_Orchestrator.py
+baselines/DMCHBA_Orchestrator.py
 baselines/SGA_Orchestrator.py
 baselines/__init__.py
 collision_avoidance/__init__.py
