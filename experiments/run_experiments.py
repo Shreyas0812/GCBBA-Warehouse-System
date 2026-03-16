@@ -939,6 +939,23 @@ def get_experiment_configs(
             "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,      # C3
         })
 
+        # ── DMCHBA baseline ──────────────────────────────────────────
+        configs.append({
+            "config_name": "dmchba",
+            "allocation_method": "dmchba",
+            "task_arrival_rate": ar,
+            "initial_tasks": SS_INITIAL_TASKS,
+            "queue_max_depth": QUEUE_MAX_DEPTH,
+            "warmup_timesteps": WARMUP_TIMESTEPS,
+            "comm_range": cr,
+            "rerun_interval": 999999,
+            "stuck_threshold": STUCK_THRESHOLD,
+            "seeds": seeds,
+            "max_timesteps": cbba_sga_max_ts,
+            "allocation_timeout_s": ALLOCATION_TIMEOUT_S,  # C1
+            "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,      # C3
+        })
+
     # ── Batch mode configs (initial_tasks > 0, rate = 0) ─────────────────
     for n_tasks, cr in itertools.product(batch_task_counts, comm_ranges):
 
@@ -993,6 +1010,23 @@ def get_experiment_configs(
         configs.append({
             "config_name": "sga_batch",
             "allocation_method": "sga",
+            "task_arrival_rate": 0,
+            "initial_tasks": n_tasks,
+            "queue_max_depth": QUEUE_MAX_DEPTH,
+            "warmup_timesteps": 0,
+            "comm_range": cr,
+            "rerun_interval": 999999,
+            "stuck_threshold": STUCK_THRESHOLD,
+            "seeds": seeds,
+            "max_timesteps": BATCH_MAX_TIMESTEPS,
+            "allocation_timeout_s": ALLOCATION_TIMEOUT_S,  # C1
+            "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,      # C3
+        })
+
+        # DMCHBA batch baseline
+        configs.append({
+            "config_name": "dmchba_batch",
+            "allocation_method": "dmchba",
             "task_arrival_rate": 0,
             "initial_tasks": n_tasks,
             "queue_max_depth": QUEUE_MAX_DEPTH,
@@ -1231,7 +1265,7 @@ def compute_and_save_optimality_ratios(output_dir: str) -> None:
     if valid.empty:
         print("  WARNING: No valid ratios - check that runs produced throughput > 0.")
     else:
-        for method in ["static", "dynamic", "cbba"]:
+        for method in ["static", "dynamic", "cbba", "dmchba"]:
             m_df = valid[valid["config_name"] == method]
             if m_df.empty:
                 continue
@@ -1349,7 +1383,7 @@ def main():
         choices=[
             "all", "ss_only", "batch_only",
             "static_only", "dynamic_only", "cbba_only",
-            "sga_only", "baselines_only", "sensitivity_only",
+            "sga_only", "dmchba_only", "baselines_only", "sensitivity_only",
         ],
         default="all",
         help=(
@@ -1436,9 +1470,11 @@ def main():
         configs = [c for c in all_configs if c["config_name"] == "cbba"]
     elif args.config == "sga_only":
         configs = [c for c in all_configs if c["config_name"] == "sga"]
+    elif args.config == "dmchba_only":
+        configs = [c for c in all_configs if c["config_name"] in {"dmchba", "dmchba_batch"}]
     elif args.config == "baselines_only":
         configs = [
-            c for c in all_configs if c["config_name"] in {"cbba", "sga"}
+            c for c in all_configs if c["config_name"] in {"cbba", "sga", "dmchba", "cbba_batch", "sga_batch", "dmchba_batch"}
         ]
     elif args.config == "sensitivity_only":
         # Only the rerun-interval sweep configs (excludes canonical "dynamic")
