@@ -39,7 +39,7 @@ class OrchestratorEvents:
 
 class IntegrationOrchestrator:
     """
-    Main Integration Orchestrator - supports GCBBA, SGA and CBBA allocation
+    Main Integration Orchestrator - supports GCBBA, SGA, CBBA and DMCHBA allocation
 
     - Run allocation to get task assignments
     - Assignments are sent to AgentState for execution
@@ -61,11 +61,11 @@ class IntegrationOrchestrator:
                  prediction_horizon: int = 5,
                  max_plan_time: int = 400,
                  Lt: Optional[int] = None,
-                 allocation_method: str = "gcbba"  # "gcbba", "sga", or "cbba"
+                 allocation_method: str = "gcbba"  # "gcbba", "sga", "cbba" or "dmchba"
                  ) -> None:
         
-        if allocation_method not in {"gcbba", "sga", "cbba"}:
-            raise ValueError(f"Invalid allocation method: {allocation_method}. Must be one of 'gcbba', 'sga', or 'cbba'.")
+        if allocation_method not in {"gcbba", "sga", "cbba", "dmchba"}:
+            raise ValueError(f"Invalid allocation method: {allocation_method}. Must be one of 'gcbba', 'sga', 'cbba', or 'dmchba'.")
 
         self.allocation_method = allocation_method
         self.task_arrival_rate = task_arrival_rate
@@ -151,7 +151,7 @@ class IntegrationOrchestrator:
 
     def _init_allocation(self, agent_positions: List) -> None:
         """
-        Initialize the chosen allocation orchestrator (GCBBA, SGA, or CBBA) with the given configuration.
+        Initialize the chosen allocation orchestrator (GCBBA, SGA, CBBA, or DMCHBA) with the given configuration.
         """
         raw_graph, G = create_graph_with_range(agent_positions, self.comm_range)
         if raw_graph.number_of_nodes() == 0:
@@ -347,7 +347,7 @@ class IntegrationOrchestrator:
 
     def run_allocation(self) -> None:
         """
-        Run the chosen allocation method: GCBBA, SGA, or CBBA.
+        Run the chosen allocation method: GCBBA, SGA, CBBA, or DMCHBA.
         """
         
         # Tasks to Exclude: completed tasks + currently executing tasks (to avoid reassigning them)
@@ -454,6 +454,9 @@ class IntegrationOrchestrator:
         elif self.allocation_method == "cbba":
             allocator = CBBA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids, grid_map=self.grid_map)
         
+        elif self.allocation_method == "dmchba":
+            allocator = DMCHBA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids, grid_map=self.grid_map)
+
         assignment, total_score, makespan = allocator.launch_agents()
 
         t_allocation_end = time.perf_counter()
