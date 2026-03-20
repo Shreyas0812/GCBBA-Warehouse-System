@@ -82,7 +82,7 @@ def main():
 
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
-    _params = cfg["create_gridworld_code"]["ros__parameters"]
+    _params = cfg["create_gridworld_node"]["ros__parameters"]
     _map_num_agents = len(_params["agent_positions"]) // 4
     _map_num_induct  = len(_params["induct_stations"]) // 4
     _grid_w = _params.get("grid_width", 30)
@@ -93,7 +93,7 @@ def main():
     output_dir = args.output if args.output else os.path.join(PROJECT_ROOT, "results", "experiments", map_name, timestamp)
     os.makedirs(output_dir, exist_ok=True)
 
-    
+
 
 
 if __name__ == "__main__":
