@@ -19,7 +19,8 @@ from gcbba.GCBBA_Task import GCBBA_Task
 class SGA_Orchestrator:
     """SGA Orchestrator class for centralized sequential greedy task allocation"""
 
-    def __init__(self, G, D, char_t, char_a, Lt=1, metric="RPT", task_ids=None, grid_map=None):
+    def __init__(self, G, D, char_t, char_a, Lt=1, metric="RPT", task_ids=None, grid_map=None,
+                 agent_energies=None, charging_station_grids=None):
         self.G = G
         # int, number of agents
         self.na = G.shape[0]
@@ -44,7 +45,9 @@ class SGA_Orchestrator:
         self.metric = metric
         self.D = D
         self.grid_map = grid_map
-        
+        self.agent_energies = agent_energies
+        self.charging_station_grids = charging_station_grids or []
+
         # Initialize Tasks
         for j in range(self.nt):
             self.tasks.append(GCBBA_Task(id=self.task_ids[j], char_t=self.char_t[j], grid_map=self.grid_map))
@@ -140,6 +143,16 @@ class SGA_Orchestrator:
 
                 for task_idx in available_tasks:
                     task = self.tasks[task_idx]  # task_idx is 0..nt-1
+
+                    # Energy feasibility: skip task if agent can't afford first task + reach charger
+                    if self.agent_energies is not None:
+                        energy = self.agent_energies[i]
+                        dist_to_induct = self._get_distance(self.agent_pos[i], self.agent_pos_grid[i], task.induct_pos, task.induct_grid)
+                        dist_induct_to_eject = self._get_distance(task.induct_pos, task.induct_grid, task.eject_pos, task.eject_grid)
+                        charger_margin = self._charger_dist_from_pos(task.eject_grid)
+                        if energy < int((dist_to_induct + dist_induct_to_eject + charger_margin) * 1.1):
+                            continue  # Can't afford this task — don't assign it
+
                     bid, insert_pos = self._compute_marginal_gain(i, agent_paths[i], task)
 
                     if bid > best_bid or (bid == best_bid and best_agent is not None and i < best_agent):
@@ -237,6 +250,18 @@ class SGA_Orchestrator:
                 return task
         raise ValueError(f"Task ID {task_id} not found")
     
+    def _charger_dist_from_pos(self, pos_grid):
+        """BFS distance from a grid position to the nearest charging station."""
+        if self.grid_map is None or pos_grid is None or not self.charging_station_grids:
+            return 0
+        best = float('inf')
+        for station_grid in self.charging_station_grids:
+            table = self.grid_map.bfs_distances_from_station.get(station_grid, {})
+            d = table.get(pos_grid, float('inf'))
+            if d < best:
+                best = d
+        return best if best != float('inf') else 0
+
     def _get_distance(self, pos, pos_grid, target_pos, target_grid):
         """
         Get distance between two positions using BFS lookup (mirrors GCBBA_Agent._get_distance).
