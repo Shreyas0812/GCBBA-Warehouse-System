@@ -73,12 +73,13 @@ class CBBA_Orchestrator:
 
         nb_iter = Nmin * D
         nb_cons = 1
+        total_consensus_rounds = 0
 
         for iteration in range(nb_iter):
             # Phase 1: Bundle Building
             for agent in self.agents:
                 agent.create_bundle()
-            
+
             # Phase 2: Consensus (single round)
             for consensus_num in range(nb_cons):
                 all_agents = [agent.snapshot() for agent in self.agents]
@@ -86,13 +87,17 @@ class CBBA_Orchestrator:
 
                 for agent in self.agents:
                     agent.resolve_conflicts(all_agents, consensus_iter=consensus_iter, consensus_index_last=True)
-            
+
             assignment, bid, max_time = self.gather_info()
 
             self.assig_history.append(assignment)
             self.bid_history.append(bid)
             self.max_times.append(max_time)
-    
+            total_consensus_rounds += nb_cons
+
+        self.total_consensus_rounds = total_consensus_rounds
+        self.convergence_iteration = nb_iter  # CBBA always runs to completion
+
         if len(self.assig_history) > 0:
             return self.assig_history[-1], self.bid_history[-1], self.max_times[-1]
         else:

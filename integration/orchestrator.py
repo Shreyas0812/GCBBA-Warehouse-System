@@ -111,6 +111,12 @@ class IntegrationOrchestrator:
         self.latest_assignment: List[List[int]] = []  # Store latest GCBBA assignment for reference in stepping logic
         self._allocation_cancelled: bool = False  # Set by InstrumentedOrchestrator timeout to prevent zombie threads from mutating state
 
+        # Consensus round accumulators
+        self._total_consensus_rounds_all_calls: int = 0
+        self._total_convergence_iterations_all_calls: int = 0
+        self._num_allocation_calls_with_consensus: int = 0
+        
+
         # For Energy and Charging Logic — use dedicated charging stations from config
         self.charging_station_grid_positions = [
             self.grid_map.continuous_to_grid(float(pos[0]), float(pos[1]), float(pos[2]))
@@ -458,6 +464,16 @@ class IntegrationOrchestrator:
             allocator = DMCHBA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids, grid_map=self.grid_map)
 
         assignment, total_score, makespan = allocator.launch_agents()
+
+        if hasattr(allocator, 'total_consensus_rounds'):
+            self._last_consensus_rounds = allocator.total_consensus_rounds
+            self._last_convergence_iteration = allocator.convergence_iteration
+            self._total_consensus_rounds_all_calls += allocator.total_consensus_rounds
+            self._total_convergence_iterations_all_calls += allocator.convergence_iteration
+            self._num_allocation_calls_with_consensus += 1
+        else:
+            self._last_consensus_rounds = 0
+            self._last_convergence_iteration = 0
 
         t_allocation_end = time.perf_counter()
 

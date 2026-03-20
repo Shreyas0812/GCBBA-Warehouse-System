@@ -83,6 +83,7 @@ class GCBBA_Orchestrator:
 
         nb_iter = Nmin # number of main iterations
         nb_cons = 2*D  # number of consensus rounds per iteration
+        total_consensus_rounds = 0
 
         for iter in range(nb_iter):
             for i in range(self.na):
@@ -108,6 +109,7 @@ class GCBBA_Orchestrator:
             self.assig_history.append(assignment)
             self.bid_history.append(bid)
             self.max_times.append(max_time)
+            total_consensus_rounds += nb_cons
 
             all_converged = np.all([agent.converged for agent in self.agents])
             if all_converged and self.cvg_iter == self.nt:
@@ -116,6 +118,9 @@ class GCBBA_Orchestrator:
 
             # if not np.all([agent.converged for agent in self.agents]):
             #     self.cvg_iter = iter + 1
+
+        self.total_consensus_rounds = total_consensus_rounds
+        self.convergence_iteration = self.cvg_iter
 
         if len(self.assig_history) > 0:
             return self.assig_history[-1], self.bid_history[-1], self.max_times[-1]

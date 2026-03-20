@@ -101,6 +101,9 @@ class SGA_Orchestrator:
         
         self.assig_history.append(assignment)
 
+        self.total_consensus_rounds = 0
+        self.convergence_iteration = 0
+
         return assignment, np.round(bid_sum, 6), makespan  # Return assignment, total score, and makespan
     
     def _run_sga(self, agent_indices, task_indices, agent_paths):

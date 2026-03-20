@@ -180,6 +180,13 @@ class RunMetrics:
     avg_queue_depth: float = 0.0         # mean across stations over full run
     queue_saturation_fraction: float = 0.0  # fraction of timesteps any station at max depth
 
+    # ── Consensus metrics ──
+    total_consensus_rounds: int = 0
+    avg_consensus_rounds_per_call: float = 0.0
+    avg_convergence_iteration: float = 0.0
+    # ── Task execution quality ──
+    distance_per_task: float = 0.0
+
     # ── Path planning timing ──
     # Counts only non-trivial _plan_paths() calls (≥1 agent actually replanned).
     # avg/max are over those calls only; total_path_plan_time_ms sums all of them.
@@ -763,6 +770,20 @@ class InstrumentedOrchestrator(IntegrationOrchestrator):
         # C1: allocation timeout count
         m.num_allocation_timeouts = self._num_allocation_timeouts
 
+        # Consensus metrics
+        m.total_consensus_rounds = self._total_consensus_rounds_all_calls
+        if self._num_allocation_calls_with_consensus > 0:
+            m.avg_consensus_rounds_per_call = round(
+                self._total_consensus_rounds_all_calls / self._num_allocation_calls_with_consensus, 2
+            )
+            m.avg_convergence_iteration = round(
+                self._total_convergence_iterations_all_calls / self._num_allocation_calls_with_consensus, 2
+            )
+
+        # Distance per task
+        if m.num_tasks_completed > 0:
+            m.distance_per_task = round(m.total_distance_all_agents / m.num_tasks_completed, 4)
+
         # C3: wall-clock ceiling flag
         m.hit_wall_clock_ceiling = self._hit_wall_clock_ceiling
 
@@ -1160,6 +1181,8 @@ SUMMARY_FIELDS = [
     "num_gcbba_runs_batch_triggered", "num_gcbba_runs_interval_triggered",
     "total_gcbba_time_ms", "avg_gcbba_time_ms", "max_gcbba_time_ms", "std_gcbba_time_ms",
     "num_vertex_collisions", "num_edge_collisions", "num_deadlocks", "num_allocation_timeouts",
+    "total_consensus_rounds", "avg_consensus_rounds_per_call", "avg_convergence_iteration",
+    "distance_per_task",
     "avg_idle_ratio", "max_idle_ratio", "std_idle_ratio", "task_balance_std",
     "total_distance_all_agents", "avg_distance_per_agent",
     "avg_task_duration", "max_task_duration", "min_task_duration",
