@@ -20,7 +20,8 @@ class CBBA_Orchestrator:
     """
     Standard CBBA Orchestrator for warehouse task allocation.
     """
-    def __init__(self, G, D, char_t, char_a, Lt=1, metric="RPT", task_ids=None, grid_map=None):
+    def __init__(self, G, D, char_t, char_a, Lt=1, metric="RPT", task_ids=None, grid_map=None,
+                 agent_energies=None, charging_station_grids=None):
         self.G = G
         self.D = D
         self.char_t = char_t
@@ -29,6 +30,8 @@ class CBBA_Orchestrator:
         self.metric = metric
         self.task_ids = task_ids if task_ids is not None else list(range(len(char_t)))
         self.grid_map = grid_map
+        self.agent_energies = agent_energies
+        self.charging_station_grids = charging_station_grids or []
 
         self.na = G.shape[0]
         self.nt = len(char_t)
@@ -56,7 +59,9 @@ class CBBA_Orchestrator:
     def initialize_agents(self):
         self.agents = []
         for i in range(self.na):
-            self.agents.append(CBBA_Agent(id=i, G=self.G, char_a=self.char_a[i], tasks=self.tasks, Lt=self.Lt, start_time=self.start_time, metric=self.metric, D=self.D, grid_map=self.grid_map))
+            energy = self.agent_energies[i] if self.agent_energies is not None else None
+            self.agents.append(CBBA_Agent(id=i, G=self.G, char_a=self.char_a[i], tasks=self.tasks, Lt=self.Lt, start_time=self.start_time, metric=self.metric, D=self.D, grid_map=self.grid_map,
+                                          energy=energy, charging_station_grids=self.charging_station_grids))
 
     def launch_agents(self, method=None, detector=None):
         """
