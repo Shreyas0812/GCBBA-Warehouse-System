@@ -44,7 +44,8 @@ from gcbba.GCBBA_Task import GCBBA_Task
 class DMCHBA_Orchestrator:
     """Distributed Matching-by-Clones Hungarian-Based Algorithm Orchestrator for warehouse task allocation."""
 
-    def __init__(self, G, D, char_t, char_a, Lt=1, metric="RTP", task_ids=None, grid_map=None):
+    def __init__(self, G, D, char_t, char_a, Lt=1, metric="RTP", task_ids=None, grid_map=None,
+                 agent_energies=None, charging_station_grids=None):
         self.G = G
         self.D = D
         self.char_t = char_t
@@ -53,6 +54,8 @@ class DMCHBA_Orchestrator:
         self.metric = metric
         self.task_ids = task_ids if task_ids is not None else list(range(len(char_t)))
         self.grid_map = grid_map
+        self.agent_energies = agent_energies
+        self.charging_station_grids = charging_station_grids or []
 
         self.na = G.shape[0]
         self.nt = len(char_t)
@@ -154,9 +157,16 @@ class DMCHBA_Orchestrator:
                 for t_local, t_global in enumerate(task_indices):
                     task = self.tasks[t_global]
 
-                    # Cost: agent -> induct -> eject 
+                    # Cost: agent -> induct -> eject
                     dist_to_induct = self._get_distance(self.agent_pos[a_global], self.agent_pos_grid[a_global], task.induct_pos, task.induct_grid)
                     dist_induct_to_eject = self._get_distance(task.induct_pos, task.induct_grid, task.eject_pos, task.eject_grid)
+
+                    # Energy feasibility: mark infeasible if agent can't afford task + reach charger
+                    if self.agent_energies is not None:
+                        energy = self.agent_energies[a_global]
+                        charger_margin = self._charger_dist_from_pos(task.eject_grid)
+                        if energy < int((dist_to_induct + dist_induct_to_eject + charger_margin) * 1.1):
+                            continue  # Leave cost_matrix[clone_row, t_local] = 1e9 (infeasible)
 
                     speed = self.agent_speed[a_global]
                     cost_matrix[clone_row, t_local] = (dist_to_induct + dist_induct_to_eject) / speed
@@ -252,6 +262,18 @@ class DMCHBA_Orchestrator:
             cost += self.leg_cost(route[k-1], route[k], agent_idx)  # Between tasks
         return cost
     
+    def _charger_dist_from_pos(self, pos_grid):
+        """BFS distance from a grid position to the nearest charging station."""
+        if self.grid_map is None or pos_grid is None or not self.charging_station_grids:
+            return 0
+        best = float('inf')
+        for station_grid in self.charging_station_grids:
+            table = self.grid_map.bfs_distances_from_station.get(station_grid, {})
+            d = table.get(pos_grid, float('inf'))
+            if d < best:
+                best = d
+        return best if best != float('inf') else 0
+
     def _get_distance(self, pos, pos_grid, target_pos, target_grid):
         """
         Get distance between two positions, using BFS if grid info is available.
