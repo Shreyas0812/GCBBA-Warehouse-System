@@ -455,13 +455,22 @@ class IntegrationOrchestrator:
                                            charging_station_grids=self.charging_station_grid_positions)
         
         elif self.allocation_method == "sga":
-            allocator = SGA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids, grid_map=self.grid_map)
-        
+            agent_energies = [self.agent_states[i].energy for i in active_agent_indices]
+            allocator = SGA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids,
+                                         grid_map=self.grid_map, agent_energies=agent_energies,
+                                         charging_station_grids=self.charging_station_grid_positions)
+
         elif self.allocation_method == "cbba":
-            allocator = CBBA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids, grid_map=self.grid_map)
-        
+            agent_energies = [self.agent_states[i].energy for i in active_agent_indices]
+            allocator = CBBA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids,
+                                          grid_map=self.grid_map, agent_energies=agent_energies,
+                                          charging_station_grids=self.charging_station_grid_positions)
+
         elif self.allocation_method == "dmchba":
-            allocator = DMCHBA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids, grid_map=self.grid_map)
+            agent_energies = [self.agent_states[i].energy for i in active_agent_indices]
+            allocator = DMCHBA_Orchestrator(G, D, active_char_t, updated_char_a, Lt, task_ids=active_task_ids,
+                                            grid_map=self.grid_map, agent_energies=agent_energies,
+                                            charging_station_grids=self.charging_station_grid_positions)
 
         assignment, total_score, makespan = allocator.launch_agents()
 
