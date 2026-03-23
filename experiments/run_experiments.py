@@ -10,6 +10,7 @@ Usage:
 import argparse
 import os
 import sys
+from typing import List, Dict
 import yaml as yaml
 from datetime import datetime
 
@@ -19,7 +20,68 @@ PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+def get_experiment_configs(
+    mode: str = 'full',
+    config:str = 'all',
+    num_agents: int = 6,
+    num_induct: int = 8,
+    grid_w: int = 30,
+    grid_h: int = 30,
+) -> List[Dict]:
+    """
+    Builds list of experiment configurations to run based on the selected mode and map parameters. 
+     - mode: 'quick', 'medium', or 'full' to select which subset of experiments to run.
+     - num_agents: number of agents in the map (used for scaling certain parameters).
+     - num_induct: number of induct stations in the map (used for scaling certain parameters).
+     - grid_w, grid_h: dimensions of the grid (used for scaling certain parameters).
 
+     Parameters swept:
+      - arrival_rates  : tasks per timestep per induct station
+      - comm_ranges    : communication range (grid units)
+      - rerun_interval : ONLY for dynamic GCBBA (static/cbba/sga use 999999)
+
+      Arrival rates and comm ranges are derived analytically from map geometry
+    """
+    configs = []
+
+    # ── Map-derived sweep anchors ──────────────────────────────────────────
+    # Average task service time: half the Manhattan perimeter of the grid.
+    avg_service_time = (grid_w + grid_h) / 2
+    capacity = num_agents / (avg_service_time * num_induct)
+    diagonal = (grid_w ** 2 + grid_h ** 2) ** 0.5
+
+    if mode == "quick":
+        seeds = [42]
+        # Knee (1×) and a heavy-load point (2×) only
+        capacity_fracs = [1.0, 2.0] 
+        # One sparse range (35% diagonal) and one full-connectivity range
+        range_fracs = [0.35, 1.2] 
+        rerun_intervals = [50]
+        batch_task_counts = [80]
+    elif mode == "medium":
+        seeds = [42, 123, 456]
+        # Light → knee → overload → heavy
+        capacity_fracs = [0.25, 0.5, 1.0, 2.0]
+        # Near-disconnected → sparse → moderate → full
+        range_fracs = [0.1, 0.2, 0.35, 1.2]
+        rerun_intervals = [25, 50, 100]
+        batch_task_counts = [40, 80, 160]
+    else:  # full
+        seeds = [42, 123, 456, 789, 1024]
+        # 10 points from 25% to 300% of capacity
+        capacity_fracs = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
+        # 6 points spanning near-disconnected to full-connectivity
+        range_fracs = [0.05, 0.1, 0.2, 0.35, 0.6, 1.2]
+        rerun_intervals = [10, 25, 50, 100, 200]
+        batch_task_counts = [20, 40, 80, 160]
+
+    arrival_rates = sorted(set(
+        max(0.001, round(f * capacity, 4)) for f in capacity_fracs
+    ))
+    comm_ranges = sorted(set(
+        max(3, round(f * diagonal)) for f in range_fracs
+    ))
+    
 def main():
     parser = argparse.ArgumentParser(description="Thesis Experiment Runner")
 
@@ -93,7 +155,14 @@ def main():
     output_dir = args.output if args.output else os.path.join(PROJECT_ROOT, "results", "experiments", map_name, timestamp)
     os.makedirs(output_dir, exist_ok=True)
 
-
+    configs = get_experiment_configs(
+        args.mode,
+        args.config,
+        num_agents=_map_num_agents,
+        num_induct=_map_num_induct,
+        grid_w =_grid_w,
+        grid_h=_grid_h
+        )
 
 
 if __name__ == "__main__":
