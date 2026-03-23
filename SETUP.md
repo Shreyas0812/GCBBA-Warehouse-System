@@ -85,43 +85,75 @@ Use **physical cores** (not logical/hyperthreaded) as your `--workers` value, si
 
 ---
 
-## 7. Run a quick smoke test first
+## 7. Run all experiments (recommended)
 
-Always do a quick run before committing to a long experiment to confirm everything works:
+The easiest way to run the full thesis experiment suite is the provided shell script, which handles all maps sequentially with the correct config per map:
 
 ```bash
-python experiments/run_experiments.py \
-  --map gridworld_warehouse_small \
-  --mode quick \
-  --config ss_only \
-  --workers 1
+bash run_all_experiments.sh                  # full thesis run
+bash run_all_experiments.sh --mode medium    # faster / initial results
+bash run_all_experiments.sh --mode quick     # smoke test only
+bash run_all_experiments.sh --workers 8      # override worker count (default: all cores)
 ```
 
-Expected output: a few runs printing `tput=...` lines, then a summary CSV written to `results/experiments/gridworld_warehouse_small/<timestamp>/`.
+The script:
+1. Activates the venv automatically
+2. Runs a smoke test first — aborts if it fails
+3. Runs each map sequentially with the correct `--config` per the strategy below
+
+Per-map strategy:
+
+| Map | N | Config | Methods |
+|-----|---|--------|---------|
+| warehouse_small | 6 | `all` | GCBBA + CBBA + SGA + DMCHBA, ss + batch |
+| warehouse_large | 18 | `all` | GCBBA + CBBA + SGA + DMCHBA, ss + batch |
+| crossdock | 50 | `gcbba_dmchba` | GCBBA + DMCHBA, ss + batch |
+| kiva | 100 | `gcbba_dmchba` | GCBBA + DMCHBA, ss + batch |
+| kiva_large | 200 | `gcbba_dmchba` | GCBBA + DMCHBA, ss + batch |
+| shelf_aisle | 470 | `gcbba_dmchba` | GCBBA + DMCHBA, ss + batch |
+
+CBBA and SGA are only run on the two smallest maps (N=6, N=18) where they are computationally feasible for both steady-state and batch modes. DMCHBA (SOTA baseline) runs on all maps.
 
 ---
 
-## 8. Run the main experiments
+## 8. Run a single map manually
 
-### warehouse_small (baseline, re-run with new analytical configs)
+If you need to re-run one map or a specific config subset:
+
 ```bash
 python experiments/run_experiments.py \
   --map gridworld_warehouse_small \
   --mode medium \
-  --config ss_only \
+  --config all \
   --workers <N>
 ```
 
-### warehouse_large (scaling experiment)
-```bash
-python experiments/run_experiments.py \
-  --map gridworld_warehouse_large \
-  --mode medium \
-  --config ss_only \
-  --workers <N>
-```
+Use `--workers 0` to auto-detect and use all cores on a dedicated machine.
 
-Since this is a dedicated machine, use `--workers 0` to auto-detect and use all cores.
+### Available `--config` options
+
+| Flag | What runs |
+|------|-----------|
+| `all` | Everything — all methods, ss + batch |
+| `ss_only` | Steady-state configs only (task_arrival_rate > 0) |
+| `batch_only` | Batch configs only (initial_tasks > 0, rate = 0) |
+| `gcbba_dmchba` | GCBBA (all variants) + DMCHBA, ss + batch. No CBBA/SGA |
+| `gcbba_only` | GCBBA variants only (static + dynamic + sensitivity sweep), ss + batch |
+| `baselines_only` | CBBA + SGA + DMCHBA, ss + batch |
+| `static_only` | Static GCBBA ss only |
+| `dynamic_only` | Dynamic GCBBA (canonical + ri sweep) ss only |
+| `cbba_only` | CBBA ss only |
+| `sga_only` | SGA ss only |
+| `dmchba_only` | DMCHBA ss + batch |
+| `sensitivity_only` | dynamic_ri* sweep configs only |
+
+### Available `--mode` options
+
+| Flag | Seeds | Arrival rates | Comm ranges | Batch task counts |
+|------|-------|---------------|-------------|-------------------|
+| `quick` | 1 | 2 | 2 | 1 |
+| `medium` | 3 | 4 | 4 | 3 |
+| `full` | 5 | 10 | 6 | 4 |
 
 ---
 
@@ -145,7 +177,7 @@ results/experiments/<map_name>/<timestamp>/
 - The experiment runner caps each run at **600s wall-clock time** (`WALL_CLOCK_LIMIT_S`).
 - This is measured in real elapsed time inside each worker process.
 - On a dedicated machine, `--workers 0` (all cores) is safe and gives maximum parallelism. On a shared machine, keep `--workers ≤ physical_core_count` to avoid oversubscription inflating wall time.
-- CBBA and SGA runs at high arrival rates are the slowest — they will most often hit the 600s cap on large maps.
+- CBBA and SGA runs at high arrival rates are the slowest — they will most often hit the 600s cap on large maps. Runs that hit the cap are recorded with `hit_wall_clock_ceiling=True` in the CSV.
 
 ---
 
@@ -164,56 +196,14 @@ echo "source ~/GCBBA_Warehouse_System/.venv/bin/activate" >> ~/.bashrc
 
 ---
 
-## Appendix: Baseline strategy for large maps
+## Appendix: Why CBBA/SGA are excluded from large maps
 
-For very large maps (kiva, kiva_large, shelf_aisle), running CBBA and SGA alongside GCBBA is not practical and not necessary. This is a feature, not a gap.
+On maps with N≥50 agents, CBBA and SGA hit the per-call allocation timeout (`allocation_timeout_s=10s`) repeatedly and can barely complete any simulation steps in batch mode. Their throughput approaches zero — not because they perform poorly on the task, but because they cannot compute an allocation fast enough to keep up with the simulation. This is a fundamentally different failure mode from "lower throughput".
 
-### Why skip CBBA/SGA on large maps
+For steady-state runs on kiva_large (N=200) and shelf_aisle (N=470), CBBA/SGA are also excluded via `gcbba_dmchba` since any data they produce is dominated by timeout artifacts rather than algorithmic behaviour.
 
-On maps with 100–470 agents, CBBA and SGA hit the per-call allocation timeout (`allocation_timeout_s=10s`) repeatedly and can barely complete any simulation steps. Their throughput approaches zero — not because they perform poorly on the task, but because they cannot compute an allocation fast enough to keep up with the simulation. This is a fundamentally different failure mode from "lower throughput" and would muddy any direct comparison.
-
-### Recommended per-map strategy
-
-| Map | Agents | GCBBA | CBBA/SGA |
-|-----|--------|-------|----------|
-| warehouse_small | 6 | Full sweep | Full sweep |
-| warehouse_large | 18 | Full sweep | Full sweep |
-| crossdock | 50 | Full sweep | Worth trying |
-| kiva | 100 | Full sweep | 1 seed only (to record intractability) |
-| kiva_large | 200 | Full sweep | Skip |
-| shelf_aisle | 470 | Full sweep | Skip |
-
-### The intractability run (kiva only)
-
-Run one seed of CBBA/SGA on kiva at a single arrival rate and comm range:
-
-```bash
-python experiments/run_experiments.py \
-  --map gridworld_kiva \
-  --mode quick \
-  --config baselines_only \
-  --workers 0
-```
-
-This gives you concrete data (`hit_wall_clock_ceiling=True`, `num_allocation_timeouts > 0`) to cite in the thesis as evidence of intractability at scale, rather than just asserting it.
-
-### How to run GCBBA-only on large maps
-
-Use `--config gcbba_only` — wait, the current filter options don't include that directly. Use `--config dynamic_only` to get the canonical dynamic GCBBA, or `--config static_only` for static. To get all GCBBA variants (static + dynamic + sensitivity sweep) without baselines, run:
-
-```bash
-# All GCBBA variants, no CBBA/SGA
-python experiments/run_experiments.py \
-  --map gridworld_kiva \
-  --mode medium \
-  --config ss_only \
-  --workers 0
-```
-
-Then filter out CBBA/SGA from the results in post-processing using `config_name` column in `summary.csv`, or add `--skip-baselines` flag if implemented.
+DMCHBA is a distributed SOTA baseline and scales significantly better — it runs on all maps.
 
 ### Thesis framing
 
-> "GCBBA scales to N=470 agents with stable throughput. CBBA and SGA are computationally intractable at this scale, consistently exceeding the per-call allocation timeout of 10s on kiva (N=100), preventing meaningful simulation progress."
-
-This is a stronger claim than "GCBBA has higher throughput" — it demonstrates a qualitative scaling advantage.
+> "GCBBA scales to N=470 agents with stable throughput. CBBA and SGA are computationally intractable at this scale, consistently exceeding the per-call allocation timeout of 10s, preventing meaningful simulation progress. DMCHBA, as a distributed SOTA baseline, is evaluated across all environments."
