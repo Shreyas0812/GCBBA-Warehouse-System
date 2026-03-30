@@ -198,8 +198,8 @@ class DMCHBA_Orchestrator:
 
             global_task_indices = [task_indices[t_col] for t_col in local_task_cols]
 
-            if len(global_task_indices) == 0:
-                agent_paths[a_global] = self.tasks[global_task_indices][0].id  # Single task, no ordering needed
+            if len(global_task_indices) == 1:
+                agent_paths[a_global] = [self.tasks[global_task_indices[0]].id]  # Single task, no ordering needed
             else:
                 # 2-opt TSP ordering
                 best_order = self._two_opt_tsp(a_global, global_task_indices)
