@@ -1,0 +1,161 @@
+import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import datetime
+import itertools
+import json
+import os
+import sys
+import traceback
+from typing import List, Dict
+import yaml as _yaml
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+def get_experiment_configs(
+    mode: str = 'full',
+    num_agents: int = 6,
+    num_induct: int = 8,
+    grid_w: int = 30,
+    grid_h: int = 30,
+) -> list:
+    """
+    Builds list of experiment configurations to run based on the selected mode and map parameters.
+    - mode: 'quick', 'medium', or 'full' to select which subset of experiments to run.
+    - num_agents: number of agents in the map (used for scaling certain parameters).
+    - num_induct: number of induct stations in the map (used for scaling certain parameters).
+    - grid_w, grid_h: dimensions of the grid (used for scaling certain parameters).
+
+    Parameters swept:
+    - arrival_rates  : tasks per timestep per induct station
+    - comm_ranges    : communication range (grid units)
+    - rerun_interval : ONLY for dynamic GCBBA (static/cbba/sga use 999999)
+
+    Arrival rates and comm ranges are derived analytically from map geometry
+    """
+    configs = []
+
+    # ── Map-derived sweep anchors ──────────────────────────────────────────
+    avg_service_time = (grid_w + grid_h) / 2      # avg Manhattan half-perimeter
+    capacity = num_agents / (avg_service_time * num_induct)  # tasks/ts/station at full utilisation
+    diagonal = (grid_w ** 2 + grid_h ** 2) ** 0.5
+
+    if mode == "quick":
+        seeds = [42]
+        capacity_fracs = [1.0, 2.0]  # Knee (1×) and a heavy-load point (2×) only
+        range_fracs = [0.35, 1.2]     # One sparse range (35% diagonal) and one full-connectivity range
+        rerun_intervals = [50]
+    elif mode == "medium":
+        seeds = [42, 123, 456]
+        capacity_fracs = [0.5, 1.0, 1.5, 2.0]  # Light → knee → overload → heavy
+        range_fracs = [0.1, 0.2, 0.35, 1.2]
+        rerun_intervals = [25, 50, 100]
+    else:  # full
+        seeds = [42, 123, 456, 789, 1024]
+        capacity_fracs = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0]
+        range_fracs = [0.05, 0.1, 0.2, 0.35, 0.6, 1.2]
+        rerun_intervals = [10, 25, 50, 100, 200]
+
+    arrival_rates = sorted(set(max(0.001, round(f * capacity, 4)) for f in capacity_fracs))
+    comm_ranges   = sorted(set(max(3, round(f * diagonal))        for f in range_fracs))
+
+    STUCK_THRESHOLD = 15
+    MAX_TIMESTEPS = 1500
+    WARMUP_TIMESTEPS = 300
+    QUEUE_MAX_DEPTH = 10
+    SS_INITIAL_TASKS = 2 * num_agents
+
+    ALLOCATION_TIMEOUT_S = 10.0
+    WALL_CLOCK_LIMIT_S = 600.0
+
+    for ar, cr in itertools.product(arrival_rates, comm_ranges):
+        
+        for ri in rerun_intervals:
+            configs.append({
+                "config_name": f"lcba_dynamic_ar{ar:.4f}_cr{cr:.1f}_ri{ri}",
+                "allocation_method": "gcbba",
+                "task_arrival_rate": ar,
+                "initial_tasks": SS_INITIAL_TASKS,
+                "queue_max_depth": QUEUE_MAX_DEPTH,
+                "warmup_timesteps": WARMUP_TIMESTEPS,
+                "comm_range": cr,
+                "rerun_interval": ri,
+                "stuck_threshold": STUCK_THRESHOLD,
+                "seeds": seeds,
+                "max_timesteps": MAX_TIMESTEPS,
+                "allocation_timeout_s": ALLOCATION_TIMEOUT_S,
+                "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,
+            })
+
+    return configs
+
+def main():
+    parser = argparse.ArgumentParser(description="Thesis Experiment Sensitivity Runner used to choose the ri for the main experiments")
+
+    parser.add_argument(
+        "--mode",
+        choices=["quick", "medium", "full"],
+        default="medium",
+    )
+
+    parser.add_argument("--output", default=None, help="Override output directory")
+
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "Number of parallel worker processes. "
+            "1 = sequential (default). "
+            "0 = use all CPU cores (os.cpu_count()). "
+            "On a 16-core machine try --workers 16."
+        ),
+    )
+
+    parser.add_argument(
+        "--map",
+        default="gridworld_warehouse_small",
+        help=(
+            "Config map name (without .yaml extension). "
+            "File must exist in config/. "
+            "Default: gridworld_warehouse_small"
+        ),
+    )
+    args = parser.parse_args()
+
+    map_name = args.map.replace(".yaml", "")
+    config_path = os.path.join(PROJECT_ROOT, "config", f"{map_name}.yaml")
+    if not os.path.exists(config_path):
+        print(f"ERROR: Config not found: {config_path}")
+        sys.exit(1)
+
+    with open(config_path) as _f:
+        _cfg = _yaml.safe_load(_f)
+    _params = _cfg["create_gridworld_node"]["ros__parameters"]
+    _map_num_agents = len(_params["agent_positions"]) // 4
+    _map_num_induct  = len(_params["induct_stations"]) // 4
+    _grid_w = _params.get("grid_width", 30)
+    _grid_h = _params.get("grid_height", 30)
+    _map_plan_time = max(200, _grid_w + _grid_h)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = args.output or os.path.join(
+        PROJECT_ROOT, "results", "experiments", map_name, "sensitivity", timestamp
+    )
+    os.makedirs(output_dir, exist_ok=True)
+
+    configs = get_experiment_configs(
+        args.mode,
+        num_agents=_map_num_agents,
+        num_induct=_map_num_induct,
+        grid_w=_grid_w,
+        grid_h=_grid_h
+    )
+
+    for config in configs:
+        print(f"Prepared config: {config['config_name']} with arrival_rate={config['task_arrival_rate']}, comm_range={config['comm_range']}, rerun_interval={config['rerun_interval']}")
+
+if __name__ == "__main__":
+    main()
