@@ -9,7 +9,7 @@ import traceback
 from typing import List, Dict
 import yaml as _yaml
 
-from experiments.machine_info import collect_machine_info
+from experiments.helper.machine_info import collect_machine_info
 from experiments.run_single_experiment import run_single_experiment
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -99,7 +99,7 @@ def get_experiment_configs(
 #  Parallel worker (module-level so ProcessPoolExecutor can pickle it)
 # ─────────────────────────────────────────────────────────────────
 
-def _run_task(task: Dict) -> Tuple[RunMetrics, str]:
+def _run_task(task: Dict):
     """
     Execute one (cfg, seed) experiment and save its per-run results.
     Returns (metrics, label) so the main process can aggregate and print progress.
@@ -122,7 +122,7 @@ def _run_task(task: Dict) -> Tuple[RunMetrics, str]:
         wall_clock_limit_s=task["wall_clock_limit_s"],
         max_plan_time=task["max_plan_time"],
     )
-    save_run_results(metrics, orch, task["output_dir"])
+    # save_run_results(metrics, orch, task["output_dir"])
     return metrics, task["label"]
     
 def main():
@@ -208,7 +208,7 @@ def main():
         json.dump(
             {
                 "mode": args.mode,
-                "config_filter": args.config,
+                "config_filter": ,
                 "map": map_name,
                 "timestamp": timestamp,
                 "total_runs": total_runs,
