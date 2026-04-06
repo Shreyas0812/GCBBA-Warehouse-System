@@ -203,39 +203,39 @@ def main():
             indent=2,
         )
 
-    # # Build flattened list of (config, seed) pairs for execution
-    # tasks = []
-    # for cfg in configs:
-    #     for seed in cfg["seeds"]:
-    #         tasks.append({
-    #             "config_path": config_path,
-    #             "config_name": cfg["config_name"],
-    #             "task_arrival_rate": cfg["task_arrival_rate"],
-    #             "queue_max_depth": cfg["queue_max_depth"],
-    #             "warmup_timesteps": cfg["warmup_timesteps"],
-    #             "comm_range": cfg["comm_range"],
-    #             "rerun_interval": cfg["rerun_interval"] if cfg["rerun_interval"] < 999999 else "ri-static",
-    #             "stuck_threshold": cfg["stuck_threshold"],
-    #             "seed": seed,
-    #             "max_timesteps": cfg["max_timesteps"],
-    #             "allocation_method": cfg["allocation_method"],
-    #             "initial_tasks": cfg["initial_tasks"],
-    #             "allocation_timeout_s": cfg["allocation_timeout_s"],
-    #             "wall_clock_limit_s": cfg["wall_clock_limit_s"],
-    #             "max_plan_time": _map_plan_time,
-    #             "output_dir": output_dir,
-    #             "label": (
-    #                 f"{cfg['config_name']} "
-    #                 f"ar{cfg['task_arrival_rate']:.4f} "
-    #                 f"cr{cfg['comm_range']:.1f} "
-    #                 f"{cfg['rerun_interval'] if cfg['rerun_interval'] < 999999 else 'ri-static'} "
-    #                 f"seed={seed}"
-    #             )
-    #         })
+    # Build flattened list of (config, seed) pairs for execution
+    tasks = []
+    for cfg in configs:
+        for seed in cfg["seeds"]:
+            tasks.append({
+                "config_path": map_path,
+                "config_name": cfg["config_name"],
+                "task_arrival_rate": cfg["task_arrival_rate"],
+                "queue_max_depth": cfg["queue_max_depth"],
+                "warmup_timesteps": cfg["warmup_timesteps"],
+                "comm_range": cfg["comm_range"],
+                "rerun_interval": cfg["rerun_interval"],
+                "stuck_threshold": cfg["stuck_threshold"],
+                "seed": seed,
+                "max_timesteps": cfg["max_timesteps"],
+                "allocation_method": cfg["allocation_method"],
+                "initial_tasks": cfg["initial_tasks"],
+                "allocation_timeout_s": cfg["allocation_timeout_s"],
+                "wall_clock_limit_s": cfg["wall_clock_limit_s"],
+                "max_plan_time": _map_plan_time,
+                "output_dir": output_dir,
+                "label": (
+                    f"{cfg['config_name']} "
+                    f"ar{cfg['task_arrival_rate']:.4f} "
+                    f"cr{cfg['comm_range']:.1f} "
+                    f"{cfg['rerun_interval'] if cfg['rerun_interval'] < 999999 else 'ri-static'} "
+                    f"seed={seed}"
+                )
+            })
 
-    # # ────────────────────────────────────────────────────────────────────────────────────
-    # # At this point we have a list of tasks to run, each with a config and seed. We can now execute these in parallel using ProcessPoolExecutor.
-    # # Each task will run the experiment with the specified config and seed, and save its results
+    # ────────────────────────────────────────────────────────────────────────────────────
+    # At this point we have a list of tasks to run, each with a config and seed. We can now execute these in parallel using ProcessPoolExecutor.
+    # Each task will run the experiment with the specified config and seed, and save its results
 
     # all_metrics = []
 
