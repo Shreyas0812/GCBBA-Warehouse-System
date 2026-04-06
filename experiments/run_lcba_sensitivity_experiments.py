@@ -45,18 +45,22 @@ def get_experiment_configs(
     capacity = num_agents / (avg_service_time * num_induct)  # tasks/ts/station at full utilisation
     diagonal = (grid_w ** 2 + grid_h ** 2) ** 0.5
 
-    seeds = [5, 42, 123, 456]
-    capacity_fracs = [0.5, 1.0, 1.5, 2.0]  # Light → knee → overload → heavy
-    range_fracs = [0.35] # 35% (knee) -- Does not affect Rerun Interval sensitivity
-    rerun_intervals = [10, 25, 50, 100, 200, 999999]  # 999999 = static (no reruns)
 
+    seeds = [5, 42, 123, 456]
+
+    capacity_fracs = [0.5, 1.0, 1.5, 2.0]  # Light → knee → overload → heavy
     arrival_rates = sorted(set(max(0.001, round(f * capacity, 4)) for f in capacity_fracs))
+
+    range_fracs = [0.35] # 35% (knee) -- Does not affect Rerun Interval sensitivity
     comm_ranges   = sorted(set(max(3, round(f * diagonal))        for f in range_fracs))
 
-    STUCK_THRESHOLD = 15
-    MAX_TIMESTEPS = 1500
-    WARMUP_TIMESTEPS = 300
-    QUEUE_MAX_DEPTH = 10
+    rerun_intervals = [10, 25, 50, 100, 200, 999999]  # 999999 = static (no reruns)
+
+    STUCK_THRESHOLD = 15 # timesteps with no progress before we consider an agent stuck and trigger a replanning
+    MAX_TIMESTEPS = max(1500, round(avg_service_time * 50))  # run for 50 full task cycles at knee 
+    WARMUP_TIMESTEPS = max(200, round(avg_service_time * 5))  # warmup for 5 full task cycles
+   
+    QUEUE_MAX_DEPTH = 10 # max number of pending tasks to keep in the queue per station (beyond initial tasks). Older tasks are dropped on overflow.
     SS_INITIAL_TASKS = 2 * num_agents
 
     ALLOCATION_TIMEOUT_S = 10.0
