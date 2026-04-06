@@ -9,6 +9,9 @@ import traceback
 from typing import List, Dict
 import yaml as _yaml
 
+from experiments.machine_info import collect_machine_info
+from experiments.run_single_experiment import run_single_experiment
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 if PROJECT_ROOT not in sys.path:
@@ -91,6 +94,37 @@ def get_experiment_configs(
 
     return configs
 
+
+# ─────────────────────────────────────────────────────────────────
+#  Parallel worker (module-level so ProcessPoolExecutor can pickle it)
+# ─────────────────────────────────────────────────────────────────
+
+def _run_task(task: Dict) -> Tuple[RunMetrics, str]:
+    """
+    Execute one (cfg, seed) experiment and save its per-run results.
+    Returns (metrics, label) so the main process can aggregate and print progress.
+    Must be a module-level function to be picklable by ProcessPoolExecutor.
+    """
+    metrics, orch = run_single_experiment(
+        task["config_path"],
+        task["config_name"],
+        task["task_arrival_rate"],
+        task["queue_max_depth"],
+        task["warmup_timesteps"],
+        task["comm_range"],
+        task["rerun_interval"],
+        task["stuck_threshold"],
+        task["seed"],
+        task["max_timesteps"],
+        allocation_method=task["allocation_method"],
+        initial_tasks=task["initial_tasks"],
+        allocation_timeout_s=task["allocation_timeout_s"],
+        wall_clock_limit_s=task["wall_clock_limit_s"],
+        max_plan_time=task["max_plan_time"],
+    )
+    save_run_results(metrics, orch, task["output_dir"])
+    return metrics, task["label"]
+    
 def main():
     parser = argparse.ArgumentParser(description="Thesis Experiment Sensitivity Runner used to choose the ri for the main experiments")
 
@@ -154,8 +188,106 @@ def main():
         grid_h=_grid_h
     )
 
-    for config in configs:
-        print(f"Prepared config: {config['config_name']} with arrival_rate={config['task_arrival_rate']}, comm_range={config['comm_range']}, rerun_interval={config['rerun_interval']}")
+    num_workers = args.workers if args.workers > 0 else os.cpu_count()
+    total_runs = sum(len(cfg["seeds"]) for cfg in configs)
+    
+    print(f"\n{'='*70}")
+    print(f"GCBBA Experiments | mode={args.mode} | map={map_name} | agents={_map_num_agents} | {total_runs} total runs | workers={num_workers}")
+    print(f"Arrival rates:   {sorted(set(c['task_arrival_rate'] for c in configs))}")
+    print(f"Comm ranges:     {sorted(set(c['comm_range'] for c in configs))}")
+    print(
+        f"Rerun intervals: "
+        f"{sorted(set(c['rerun_interval'] for c in configs if c['rerun_interval'] < 999999))}"
+    )
+    print(f"Output:          {output_dir}")
+    print(f"{'='*70}\n")
+
+    # Save experiment metadata + machine info
+    machine_info = collect_machine_info()
+    with open(os.path.join(output_dir, "experiment_config.json"), "w") as f:
+        json.dump(
+            {
+                "mode": args.mode,
+                "config_filter": args.config,
+                "map": map_name,
+                "timestamp": timestamp,
+                "total_runs": total_runs,
+                "workers": num_workers,
+                "machine": machine_info,
+                "configs": configs,
+            },
+            f,
+            indent=2,
+        )
+
+    # Build flattened list of (config, seed) pairs for execution
+    tasks = []
+    for cfg in configs:
+        for seed in cfg["seeds"]:
+            tasks.append({
+                "config_path": config_path,
+                "config_name": cfg["config_name"],
+                "task_arrival_rate": cfg["task_arrival_rate"],
+                "queue_max_depth": cfg["queue_max_depth"],
+                "warmup_timesteps": cfg["warmup_timesteps"],
+                "comm_range": cfg["comm_range"],
+                "rerun_interval": cfg["rerun_interval"] if cfg["rerun_interval"] < 999999 else "ri-static",
+                "stuck_threshold": cfg["stuck_threshold"],
+                "seed": seed,
+                "max_timesteps": cfg["max_timesteps"],
+                "allocation_method": cfg["allocation_method"],
+                "initial_tasks": cfg["initial_tasks"],
+                "allocation_timeout_s": cfg["allocation_timeout_s"],
+                "wall_clock_limit_s": cfg["wall_clock_limit_s"],
+                "max_plan_time": _map_plan_time,
+                "output_dir": output_dir,
+                "label": (
+                    f"{cfg['config_name']} "
+                    f"ar{cfg['task_arrival_rate']:.4f} "
+                    f"cr{cfg['comm_range']:.1f} "
+                    f"{cfg['rerun_interval'] if cfg['rerun_interval'] < 999999 else 'ri-static'} "
+                    f"seed={seed}"
+                )
+            })
+
+    # ────────────────────────────────────────────────────────────────────────────────────
+    # At this point we have a list of tasks to run, each with a config and seed. We can now execute these in parallel using ProcessPoolExecutor.
+    # Each task will run the experiment with the specified config and seed, and save its results
+
+    all_metrics = []
+
+    if num_workers == 1:
+        print("Running experiments sequentially...")
+        for run_num, task in enumerate(tasks, 1):
+            print(f"\n[RUN {run_num}/{total_runs}] {task['label']}")
+            try:
+                metrics, label = _run_task(task)
+                all_metrics.append(metrics)
+                # _print_result(metrics, label, run_num)
+            except Exception as e:
+                print(f"ERROR in run {task['label']}: {e}")
+                traceback.print_exc()
+    else:
+        completed = 0
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            future_to_task = {executor.submit(_run_task, task): task for task in tasks}
+            for future in as_completed(future_to_task):
+                task = future_to_task[future]
+                completed += 1
+                try:
+                    metrics, label = future.result()
+                    all_metrics.append(metrics)
+                    completed += 1
+                    print(f"\n[COMPLETED {completed}/{total_runs}] {label}")
+                    # _print_result(metrics, label, completed)
+                except Exception as e:
+                    print(f"ERROR in run {task['label']}: {e}")
+                    traceback.print_exc()
+
+    if all_metrics:
+        pass
+        # save_summary_csv(all_metrics, output_dir)
+        # compute_and_save_optimality_ratios(output_dir)
 
 if __name__ == "__main__":
     main()

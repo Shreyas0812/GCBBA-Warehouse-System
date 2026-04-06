@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -lah \"c:/Users/shrey/OneDrive/Documents/Upenn/Thesis/GCBBA_Warehouse_System/\"*.py \"c:/Users/shrey/OneDrive/Documents/Upenn/Thesis/GCBBA_Warehouse_System\"/tests/)",
+      "Bash(xargs wc -l)"
+    ]
+  }
+}

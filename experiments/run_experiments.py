@@ -13,7 +13,7 @@ import sys
 from typing import List, Dict
 import yaml as yaml
 from datetime import datetime
-
+import itertools
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
@@ -61,6 +61,7 @@ def get_experiment_configs(
 
     elif mode == "medium":
         seeds = [42, 123, 456]
+        capacity_fracs = [0.5, 1.0, 1.5, 2.0]
         # Light → knee → overload → heavy
         range_fracs = [0.1, 0.2, 0.35, 1.2]
         rerun_intervals = [25, 50, 100]
@@ -69,7 +70,7 @@ def get_experiment_configs(
     else:  # full
         seeds = [42, 123, 456, 789, 1024]
         # 10 points from 25% to 300% of capacity
-        capacity_fracs = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
+        capacity_fracs = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0]
         # 6 points spanning near-disconnected to full-connectivity
         range_fracs = [0.05, 0.1, 0.2, 0.35, 0.6, 1.2]
         rerun_intervals = [10, 25, 50, 100, 200]
@@ -81,7 +82,66 @@ def get_experiment_configs(
     comm_ranges = sorted(set(
         max(3, round(f * diagonal)) for f in range_fracs
     ))
-    
+
+    STUCK_THRESHOLD = 15
+    MAX_TIMESTEPS = 1500
+    WARMUP_TIMESTEPS = 300
+    QUEUE_MAX_DEPTH = 10
+    BATCH_MAX_TIMESTEPS = 3000
+    SS_INITIAL_TASKS = 2 * num_agents
+
+    ALLOCATION_TIMEOUT_S = 10.0
+    WALL_CLOCK_LIMIT_S = 600.0
+
+    for ar, cr in itertools.product(arrival_rates, comm_ranges):
+        if config in ("all", "ss_only"):
+            configs.append({
+                "experiment_type": "steady_state",
+                "arrival_rate": ar,
+                "comm_range": cr,
+                "initial_tasks": SS_INITIAL_TASKS,
+                "rerun_interval": 999999,  # no periodic reruns in steady state
+                "max_timesteps": MAX_TIMESTEPS,
+                "warmup_timesteps": WARMUP_TIMESTEPS,
+                "stuck_threshold": STUCK_THRESHOLD,
+                "queue_max_depth": QUEUE_MAX_DEPTH,
+                "allocation_timeout_s": ALLOCATION_TIMEOUT_S,
+                "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,
+            })
+        if config in ("all", "batch_only"):
+            for btc in batch_task_counts:
+                configs.append({
+                    "experiment_type": "batch",
+                    "arrival_rate": 0.0,  # no arrivals in batch mode
+                    "comm_range": cr,
+                    "initial_tasks": btc,
+                    "rerun_interval": 999999,  # no periodic reruns in batch mode
+                    "max_timesteps": BATCH_MAX_TIMESTEPS,
+                    "warmup_timesteps": 0,
+                    "stuck_threshold": STUCK_THRESHOLD,
+                    "queue_max_depth": QUEUE_MAX_DEPTH,
+                    "allocation_timeout_s": ALLOCATION_TIMEOUT_S,
+                    "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,
+                })
+        if config in ("all", "sensitivity_only"):
+            for ri in rerun_intervals:
+                configs.append({
+                    "experiment_type": "dynamic",
+                    "arrival_rate": ar,
+                    "comm_range": cr,
+                    "initial_tasks": SS_INITIAL_TASKS,
+                    "rerun_interval": ri,  # periodic reruns every N timesteps
+                    "max_timesteps": MAX_TIMESTEPS,
+                    "warmup_timesteps": WARMUP_TIMESTEPS,
+                    "stuck_threshold": STUCK_THRESHOLD,
+                    "queue_max_depth": QUEUE_MAX_DEPTH,
+                    "allocation_timeout_s": ALLOCATION_TIMEOUT_S,
+                    "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,
+                })
+
+    return configs
+
+
 def main():
     parser = argparse.ArgumentParser(description="Thesis Experiment Runner")
 
@@ -91,12 +151,10 @@ def main():
             "all", 
             "ss_only", 
             "batch_only",
-            "static_only",
-            "dynamic_only",
             "cbba_only",
             "sga_only",
             "dmchba_only",
-            "baseline_only"
+            "baseline_only",
             "sensitivity_only"
         ],
         default="all",
@@ -105,8 +163,8 @@ def main():
             "all (default)"
             "'ss_only' = Steady State configs (task_arrival_rate >0). "
             "'batch_only' = Batch processing configs. (initial_tasks >0, task_arrival_rate=0). "
-            "'static_only' = LCBA static -- concensus run only on trigger, no periodic consensus. "
-            "'dynamic_only' = LCBA dynamic -- periodic consensus every N iterations, regardless of triggers. "
+            "'lcba_static_only' = LCBA static -- concensus run only on trigger, no periodic consensus. "
+            "'lcba_dynamic_only' = LCBA dynamic -- periodic consensus every N iterations, regardless of triggers. "
             "'cbba_only' = CBBA-specific baseline configs. "
             "'sga_only' = SGA-specific baseline configs. "
             "'dmchba_only' = DMCHBA-specific baseline configs. "
