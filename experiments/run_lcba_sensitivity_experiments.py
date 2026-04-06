@@ -163,7 +163,7 @@ def main():
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = args.output or os.path.join(
-        PROJECT_ROOT, "results", "experiments", map_name, "sensitivity", timestamp
+        PROJECT_ROOT, "results", "experiments", map_name, "rerun_interval_sensitivity", timestamp
     )
     os.makedirs(output_dir, exist_ok=True)
 
@@ -177,35 +177,31 @@ def main():
 
     num_workers = args.workers if args.workers > 0 else os.cpu_count()
     total_runs = sum(len(cfg["seeds"]) for cfg in configs)
-    
-    # print(f"\n{'='*70}")
-    # print(f"LCBA Experiments | map={map_name} | agents={_map_num_agents} | {total_runs} total runs | workers={num_workers}")
-    # print(f"Arrival rates:   {sorted(set(c['task_arrival_rate'] for c in configs))}")
-    # print(f"Comm ranges:     {sorted(set(c['comm_range'] for c in configs))}")
-    # print(
-    #     f"Rerun intervals: "
-    #     f"{sorted(set(c['rerun_interval'] for c in configs if c['rerun_interval'] < 999999))}"
-    # )
-    # print(f"Output:          {output_dir}")
-    # print(f"{'='*70}\n")
 
-    # # Save experiment metadata + machine info
-    # machine_info = collect_machine_info()
-    # with open(os.path.join(output_dir, "experiment_config.json"), "w") as f:
-    #     json.dump(
-    #         {
-    #             "mode": args.mode,
-    #             "config_filter": ,
-    #             "map": map_name,
-    #             "timestamp": timestamp,
-    #             "total_runs": total_runs,
-    #             "workers": num_workers,
-    #             "machine": machine_info,
-    #             "configs": configs,
-    #         },
-    #         f,
-    #         indent=2,
-    #     )
+    print(f"\n{'='*70}")
+    print(f"LCBA Experiments | map={map_name} | agents={_map_num_agents} | {total_runs} total runs | workers={num_workers}")
+    print(f"Arrival rates:   {sorted(set(c['task_arrival_rate'] for c in configs))}")
+    print(f"Comm ranges:     {sorted(set(c['comm_range'] for c in configs))}")
+    print(f"Rerun intervals: {sorted(set(c['rerun_interval'] for c in configs if c['rerun_interval'] < 999999))} and 999999 (ri-static, no reruns)")
+    print(f"Output:          {output_dir}")
+    print(f"{'='*70}\n")
+
+    # Save experiment metadata + machine info
+    machine_info = collect_machine_info()
+    with open(os.path.join(output_dir, "experiment_config.json"), "w") as f:
+        json.dump(
+            {
+                "experiment": "LCBA Sensitivity Analysis",
+                "map": map_name,
+                "timestamp": timestamp,
+                "total_runs": total_runs,
+                "workers": num_workers,
+                "machine": machine_info,
+                "configs": configs,
+            },
+            f,
+            indent=2,
+        )
 
     # # Build flattened list of (config, seed) pairs for execution
     # tasks = []
