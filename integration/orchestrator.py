@@ -57,6 +57,7 @@ class IntegrationOrchestrator:
                  comm_range: float = 30,
                  sp_lim: Tuple[float, float] = (1.0, 1.0),
                  rerun_interval: int = 10,
+                 new_task_cooldown: int = 5,
                  stuck_threshold: int = 15,
                  prediction_horizon: int = 5,
                  max_plan_time: int = 400,
@@ -75,6 +76,7 @@ class IntegrationOrchestrator:
         self.comm_range = comm_range
         self.sp_lim = sp_lim
         self.rerun_interval = rerun_interval
+        self.new_task_cooldown = new_task_cooldown
         self.stuck_threshold = stuck_threshold
         self.prediction_horizon = prediction_horizon
         self.max_plan_time = max_plan_time
@@ -329,7 +331,7 @@ class IntegrationOrchestrator:
             self.run_allocation()
 
         # New Task arrived and idle agents are available — trigger allocation immediately to assign them (instead of waiting for the next scheduled rerun)
-        if new_task_ids and self.last_gcbba_timestep != self.current_timestep:
+        if new_task_ids and (self.current_timestep - self.last_gcbba_timestep) >= self.new_task_cooldown:
             if any(a.is_idle and not a.is_charging and not a.is_navigating_to_charger
                    for a in self.agent_states):
                 self.run_allocation()
@@ -657,40 +659,30 @@ class IntegrationOrchestrator:
 
     def _detect_events(self, completed_task_ids: List[int]) -> OrchestratorEvents:
 
-        if self.rerun_interval >= self.max_plan_time * 2:
-            return OrchestratorEvents(
-                completed_task_ids=completed_task_ids,
-                stuck_agent_ids=[],
-                gcbba_rerun=False
-            )
-
         stuck_agent_ids: List[int] = []
 
         for agent_state in self.agent_states:
             if agent_state.detect_stuck(self.stuck_threshold):
                 stuck_agent_ids.append(agent_state.agent_id)
                 agent_state.needs_new_path = True  # Trigger replanning for stuck agents
-        
+
         gcbba_rerun = False
         time_since_last_gcbba = self.current_timestep - self.last_gcbba_timestep
 
-        # Cooldown to prevent excessive GCBBA reruns on close timestep events
-        min_cooldown = max(3, self.rerun_interval // 3)  # At least 3 timesteps cooldown or a fraction of the rerun interval
-
         batch_threshold = max(2, self.num_agents // 3)  # Threshold for batch triggering based on number of agents
         completed_since_last = len(self.completed_task_ids) - self._completed_at_last_gcbba
-        if completed_since_last >= batch_threshold and time_since_last_gcbba >= min_cooldown:
-            gcbba_rerun = True  # Trigger GCBBA rerun if enough tasks have been completed since the last run and cooldown has passed
-        
-        # Trigger re run when unassigned tasks are pending and idle agents are available
-        if not gcbba_rerun and self._pending_task_ids and time_since_last_gcbba >= min_cooldown:
+        if completed_since_last >= batch_threshold:
+            gcbba_rerun = True  # Trigger rerun if enough tasks completed since last run
+
+        # Trigger rerun when unassigned tasks are pending and idle agents are available
+        if not gcbba_rerun and self._pending_task_ids:
             if any(a.is_idle and not a.is_charging and not a.is_navigating_to_charger
                    for a in self.agent_states):
                 gcbba_rerun = True
 
-        # Handled via needs_new_plan flag in AgentState which triggers replanning (and indirectly GCBBA rerun if new paths are needed for assigned tasks)
-        # elif stuck_agent_ids and time_since_last_gcbba >= min_cooldown:
-        #     gcbba_rerun = True  # Trigger GCBBA rerun if there are stuck agents and cooldown has passed
+        # Rerun Interval: if nothing has triggered a rerun for rerun_interval timesteps, force one
+        if not gcbba_rerun and time_since_last_gcbba >= self.rerun_interval:
+            gcbba_rerun = True
 
         return OrchestratorEvents(
             completed_task_ids=completed_task_ids,
