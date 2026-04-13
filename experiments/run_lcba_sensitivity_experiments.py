@@ -1,5 +1,7 @@
 import argparse
+import csv
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import asdict
 from datetime import datetime
 import itertools
 import json
@@ -11,7 +13,8 @@ import yaml as _yaml
 
 from helper.machine_info import collect_machine_info
 from helper.map_utils import calculate_average_service_time
-# from experiments.run_single_experiment import run_single_experiment
+from run_single_experiment import run_single_sensitivity_experiment
+from SensitivityMetrics import SensitivityMetrics  # used for type hints and saving
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
@@ -89,6 +92,63 @@ def get_experiment_configs(
 
 
 # ─────────────────────────────────────────────────────────────────
+#  Metrics fields written to summary.csv
+# ─────────────────────────────────────────────────────────────────
+
+SENSITIVITY_FIELDS = [
+    # Identity
+    "run_id", "config_name", "seed", "rerun_interval", "task_arrival_rate", "comm_range",
+    # Outcome
+    "total_steps", "hit_timestep_ceiling", "hit_wall_clock_ceiling",
+    # Primary — does ri help?
+    "throughput", "avg_task_wait_time", "avg_queue_depth",
+    "queue_saturation_fraction", "tasks_dropped_by_queue_cap",
+    "steady_state_tasks_completed", "total_tasks_injected",
+    # Secondary — cost of ri
+    "num_gcbba_runs", "num_gcbba_runs_interval_triggered",
+    "avg_gcbba_time_ms", "total_gcbba_time_ms",
+    # Tertiary — interpretation
+    "avg_idle_ratio", "task_balance_std",
+    # Wall clock
+    "wall_time_seconds",
+]
+
+
+# ─────────────────────────────────────────────────────────────────
+#  Results saving
+# ─────────────────────────────────────────────────────────────────
+
+def _save_run_metrics(metrics: SensitivityMetrics, output_dir: str) -> None:
+    """Save full metrics dataclass as JSON in a per-run subdirectory."""
+    run_dir = os.path.join(output_dir, metrics.run_id)
+    os.makedirs(run_dir, exist_ok=True)
+    with open(os.path.join(run_dir, "metrics.json"), "w") as f:
+        json.dump(asdict(metrics), f, indent=2, default=str)
+
+
+def _save_summary_csv(all_metrics: List[SensitivityMetrics], output_dir: str) -> None:
+    """Write focused summary CSV with only sensitivity-relevant fields."""
+    summary_path = os.path.join(output_dir, "summary.csv")
+    with open(summary_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=SENSITIVITY_FIELDS)
+        writer.writeheader()
+        for m in all_metrics:
+            writer.writerow({k: getattr(m, k) for k in SENSITIVITY_FIELDS})
+    print(f"\nSummary CSV: {summary_path}  ({len(all_metrics)} runs)")
+
+
+def _print_result(metrics: SensitivityMetrics, run_num: int, total_runs: int) -> None:
+    ri_label = metrics.rerun_interval if metrics.rerun_interval < 999999 else "ri-static"
+    print(
+        f"  [DONE {run_num}/{total_runs}] "
+        f"ri={ri_label} ar={metrics.task_arrival_rate:.4f} "
+        f"→ throughput={metrics.throughput:.4f} "
+        f"wait={metrics.avg_task_wait_time:.1f}ts "
+        f"dropped={metrics.tasks_dropped_by_queue_cap}"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────
 #  Parallel worker (module-level so ProcessPoolExecutor can pickle it)
 # ─────────────────────────────────────────────────────────────────
 
@@ -98,7 +158,7 @@ def _run_task(task: Dict):
     Returns (metrics, label) so the main process can aggregate and print progress.
     Must be a module-level function to be picklable by ProcessPoolExecutor.
     """
-    metrics, orch = run_single_experiment(
+    metrics = run_single_sensitivity_experiment(
         task["config_path"],
         task["config_name"],
         task["task_arrival_rate"],
@@ -115,7 +175,6 @@ def _run_task(task: Dict):
         wall_clock_limit_s=task["wall_clock_limit_s"],
         max_plan_time=task["max_plan_time"],
     )
-    # save_run_results(metrics, orch, task["output_dir"])
     return metrics, task["label"]
     
 def main():
@@ -233,44 +292,38 @@ def main():
                 )
             })
 
-    # ────────────────────────────────────────────────────────────────────────────────────
-    # At this point we have a list of tasks to run, each with a config and seed. We can now execute these in parallel using ProcessPoolExecutor.
-    # Each task will run the experiment with the specified config and seed, and save its results
+    all_metrics: List[SensitivityMetrics] = []
 
-    # all_metrics = []
+    if num_workers == 1:
+        print("Running experiments sequentially...")
+        for run_num, task in enumerate(tasks, 1):
+            print(f"\n[RUN {run_num}/{total_runs}] {task['label']}")
+            try:
+                metrics, _ = _run_task(task)
+                all_metrics.append(metrics)
+                _save_run_metrics(metrics, output_dir)
+                _print_result(metrics, run_num, total_runs)
+            except Exception as e:
+                print(f"ERROR in run {task['label']}: {e}")
+                traceback.print_exc()
+    else:
+        completed = 0
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            future_to_task = {executor.submit(_run_task, task): task for task in tasks}
+            for future in as_completed(future_to_task):
+                task = future_to_task[future]
+                completed += 1
+                try:
+                    metrics, _ = future.result()
+                    all_metrics.append(metrics)
+                    _save_run_metrics(metrics, output_dir)
+                    _print_result(metrics, completed, total_runs)
+                except Exception as e:
+                    print(f"ERROR in run {task['label']}: {e}")
+                    traceback.print_exc()
 
-    # if num_workers == 1:
-    #     print("Running experiments sequentially...")
-    #     for run_num, task in enumerate(tasks, 1):
-    #         print(f"\n[RUN {run_num}/{total_runs}] {task['label']}")
-    #         try:
-    #             metrics, label = _run_task(task)
-    #             all_metrics.append(metrics)
-    #             # _print_result(metrics, label, run_num)
-    #         except Exception as e:
-    #             print(f"ERROR in run {task['label']}: {e}")
-    #             traceback.print_exc()
-    # else:
-    #     completed = 0
-    #     with ProcessPoolExecutor(max_workers=num_workers) as executor:
-    #         future_to_task = {executor.submit(_run_task, task): task for task in tasks}
-    #         for future in as_completed(future_to_task):
-    #             task = future_to_task[future]
-    #             completed += 1
-    #             try:
-    #                 metrics, label = future.result()
-    #                 all_metrics.append(metrics)
-    #                 completed += 1
-    #                 print(f"\n[COMPLETED {completed}/{total_runs}] {label}")
-    #                 # _print_result(metrics, label, completed)
-    #             except Exception as e:
-    #                 print(f"ERROR in run {task['label']}: {e}")
-    #                 traceback.print_exc()
-
-    # if all_metrics:
-    #     pass
-    #     # save_summary_csv(all_metrics, output_dir)
-    #     # compute_and_save_optimality_ratios(output_dir)
+    if all_metrics:
+        _save_summary_csv(all_metrics, output_dir)
 
 if __name__ == "__main__":
     main()
