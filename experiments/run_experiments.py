@@ -1,10 +1,9 @@
 """
-Experiment Runner: 
+Experiment Runner:
 
 Usage:
   python run_experiments.py --mode quick    # ~8 runs, verify pipeline
-  python run_experiments.py --mode medium   # ~216 runs, initial results
-  python run_experiments.py --mode full     # ~720 runs, thesis data
+  python run_experiments.py --mode full     # ~324 runs, thesis data (SS: 216, Batch: 108)
 """
 
 import argparse
@@ -39,82 +38,100 @@ def get_experiment_configs(
      - grid_w, grid_h: dimensions of the grid (used for scaling certain parameters).
 
      Parameters swept:
-      - arrival_rates  : tasks per timestep per induct station
+      - ss_arrival_rates  : tasks per timestep per induct station
       - comm_ranges    : communication range (grid units)
 
       Arrival rates and comm ranges are derived analytically from map geometry
     """
+    # Define constants - independent of the map but common across experiments
+    STUCK_THRESHOLD = 15
+    QUEUE_MAX_DEPTH = 10
+    WARMUP_TIMESTEPS = 300
+    ALLOCATION_TIMEOUT_S = 10.0
+    WALL_CLOCK_LIMIT_S = 600.0
+
+    SS_MAX_TIMESTEPS = 1500
+    SS_INITIAL_TASKS = 2 * num_agents
+    BATCH_MAX_TIMESTEPS = 3000
+
     configs = []
 
     # ── Map-derived sweep anchors ──────────────────────────────────────────
-    avg_service_time = calculate_average_service_time(map_path) if map_path else (grid_w + grid_h) / 2
-    capacity = num_agents / (avg_service_time * num_induct)
     diagonal = (grid_w ** 2 + grid_h ** 2) ** 0.5
+    avg_service_time = calculate_average_service_time(map_path) if map_path else (grid_w + grid_h) / 2
+    
+    RERUN_INTERVAL = round(2 * avg_service_time)
+    
+    # Steady-state capacity: max arrival rate that keeps the system stable (tasks arrive at same rate they can be completed).
+    _ss_capacity = num_agents / (avg_service_time * num_induct)
+
+    # Batch capacity: max tasks all agents could complete before BATCH_MAX_TIMESTEPS.
+    # Used as the anchor for the batch task count sweep (unlike steady-state which uses arrival capacity).
+    _batch_capacity = round(num_agents * BATCH_MAX_TIMESTEPS / avg_service_time)
 
     if mode == "quick":
         seeds = [42]
-        # Knee (1×) and a heavy-load point (2×) only
-        capacity_fracs = [1.0, 2.0] 
         # One sparse range (35% diagonal) and one full-connectivity range
-        range_fracs = [0.35, 1.2] 
-        batch_task_counts = [80]
+        range_fracs = [0.35, 1.2]
+        # Knee (1×) and a heavy-load point (2×) only
+        ss_capacity_fracs = [1.0, 2.0]
+
+        batch_fracs = [0.2, 1.0]  # 20% of batch capacity and full batch capacity
 
     else:  # full
         seeds = [42, 123, 456]
-        # 10 points from 25% to 300% of capacity
-        capacity_fracs = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0]
         # 6 points spanning near-disconnected to full-connectivity
         range_fracs = [0.05, 0.1, 0.2, 0.35, 0.6, 1.2]
-        batch_task_counts = [20, 40, 80, 160]
+        # 10 points from 25% to 300% of ss capacity
+        ss_capacity_fracs = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0]
+        
+        batch_fracs = [0.05, 0.1, 0.2, 0.4, 0.7, 1.0]
 
-    arrival_rates = sorted(set(
-        max(0.001, round(f * capacity, 4)) for f in capacity_fracs
-    ))
     comm_ranges = sorted(set(
         max(3, round(f * diagonal)) for f in range_fracs
     ))
 
-    STUCK_THRESHOLD = 15
-    MAX_TIMESTEPS = 1500
-    WARMUP_TIMESTEPS = 300
-    QUEUE_MAX_DEPTH = 10
-    BATCH_MAX_TIMESTEPS = 3000
-    SS_INITIAL_TASKS = 2 * num_agents
-    RERUN_INTERVAL = round(2 * avg_service_time)
+    ss_arrival_rates = sorted(set(
+        max(0.001, round(f * _ss_capacity, 4)) for f in ss_capacity_fracs
+    ))
 
-    ALLOCATION_TIMEOUT_S = 10.0
-    WALL_CLOCK_LIMIT_S = 600.0
+    batch_task_counts = sorted(set(
+        max(num_agents, round(f * _batch_capacity)) for f in batch_fracs
+    ))
 
-    for ar, cr in itertools.product(arrival_rates, comm_ranges):
-        if config in ("all", "ss_only"):
+    if config in ("all", "ss_only"):
+        for ar, cr in itertools.product(ss_arrival_rates, comm_ranges):
             configs.append({
                 "experiment_type": "steady_state",
                 "arrival_rate": ar,
                 "comm_range": cr,
                 "initial_tasks": SS_INITIAL_TASKS,
                 "rerun_interval": RERUN_INTERVAL,
-                "max_timesteps": MAX_TIMESTEPS,
+                "max_timesteps": SS_MAX_TIMESTEPS,
                 "warmup_timesteps": WARMUP_TIMESTEPS,
                 "stuck_threshold": STUCK_THRESHOLD,
                 "queue_max_depth": QUEUE_MAX_DEPTH,
                 "allocation_timeout_s": ALLOCATION_TIMEOUT_S,
                 "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,
+                "seeds": seeds,
             })
-        if config in ("all", "batch_only"):
-            for btc in batch_task_counts:
-                configs.append({
-                    "experiment_type": "batch",
-                    "arrival_rate": 0.0,  # no arrivals in batch mode
-                    "comm_range": cr,
-                    "initial_tasks": btc,
-                    "rerun_interval": 999999,  # no periodic reruns in batch mode
-                    "max_timesteps": BATCH_MAX_TIMESTEPS,
-                    "warmup_timesteps": 0,
-                    "stuck_threshold": STUCK_THRESHOLD,
-                    "queue_max_depth": QUEUE_MAX_DEPTH,
-                    "allocation_timeout_s": ALLOCATION_TIMEOUT_S,
-                    "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,
-                })
+
+    if config in ("all", "batch_only"):
+        for btc, cr in itertools.product(batch_task_counts, comm_ranges):
+            configs.append({
+                "experiment_type": "batch",
+                "arrival_rate": 0.0,  # no arrivals in batch mode
+                "comm_range": cr,
+                "initial_tasks": btc,
+                "rerun_interval": 999999,  # no periodic reruns in batch mode
+                "max_timesteps": BATCH_MAX_TIMESTEPS,
+                "warmup_timesteps": 0,
+                "stuck_threshold": STUCK_THRESHOLD,
+                "queue_max_depth": QUEUE_MAX_DEPTH,
+                "allocation_timeout_s": ALLOCATION_TIMEOUT_S,
+                "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,
+                "seeds": seeds,
+            })
 
     return configs
 
@@ -150,7 +167,7 @@ def main():
 
     parser.add_argument(
         "--mode",
-        choices=["quick", "medium", "full"],
+        choices=["quick", "full"],
         default="full",
     )
 
@@ -176,7 +193,7 @@ def main():
         sys.exit(1)
 
     with open(config_path) as f:
-            cfg = yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
     _params = cfg["create_gridworld_node"]["ros__parameters"]
     _map_num_agents = len(_params["agent_positions"]) // 4
     _map_num_induct  = len(_params["induct_stations"]) // 4
@@ -198,6 +215,16 @@ def main():
         map_path=config_path,
         )
 
+    num_workers = args.workers if args.workers > 0 else os.cpu_count()
+    total_runs = sum(len(cfg["seeds"]) for cfg in configs)
+
+    print(f"\n{'='*70}")
+    print(f"LCBA Experiments | map={map_name} | agents={_map_num_agents} | {total_runs} total runs | workers={num_workers}")
+    print(f"Arrival rates:   {sorted(set(c['task_arrival_rate'] for c in configs))}")
+    print(f"Comm ranges:     {sorted(set(c['comm_range'] for c in configs))}")
+    print(f"Batch task counts:{sorted(set(c['initial_tasks'] for c in configs if c['experiment_type']=='batch'))}")
+    print(f"Rerun intervals: {sorted(set(c['rerun_interval'] for c in configs))}")
+    print(f"Output dir:      {output_dir}")
 
 if __name__ == "__main__":
     main()
