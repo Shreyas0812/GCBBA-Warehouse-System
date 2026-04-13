@@ -57,7 +57,8 @@ def get_experiment_configs(
     range_fracs = [0.35] # 35% (knee) -- Does not affect Rerun Interval sensitivity
     comm_ranges   = sorted(set(max(3, round(f * diagonal))        for f in range_fracs))
 
-    rerun_intervals = [10, 25, 50, 100, 200, 999999]  # 999999 = static (no reruns)
+    map_default_ri = round(2 * avg_service_time)  # Value used in main experiments
+    rerun_intervals = sorted(set([10, 25, 50, 100, 200, map_default_ri, 999999]))  # 999999 = static (no reruns)
 
     STUCK_THRESHOLD = 15 # timesteps with no progress before we consider an agent stuck and trigger a replanning
     MAX_TIMESTEPS = max(1500, round(avg_service_time * 50))  # run for 50 full task cycles at knee 

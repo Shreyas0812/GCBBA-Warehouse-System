@@ -20,6 +20,8 @@ PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from helper.map_utils import calculate_average_service_time
+
 def get_experiment_configs(
     mode: str = 'full',
     config:str = 'all',
@@ -27,10 +29,11 @@ def get_experiment_configs(
     num_induct: int = 8,
     grid_w: int = 30,
     grid_h: int = 30,
+    map_path: str = None,
 ) -> List[Dict]:
     """
     Builds list of experiment configurations to run based on the selected mode and map parameters. 
-     - mode: 'quick', 'medium', or 'full' to select which subset of experiments to run.
+     - mode: 'quick' to check functionality. otherwise, 'full' for comprehensive sweep (default).
      - num_agents: number of agents in the map (used for scaling certain parameters).
      - num_induct: number of induct stations in the map (used for scaling certain parameters).
      - grid_w, grid_h: dimensions of the grid (used for scaling certain parameters).
@@ -38,15 +41,13 @@ def get_experiment_configs(
      Parameters swept:
       - arrival_rates  : tasks per timestep per induct station
       - comm_ranges    : communication range (grid units)
-      - rerun_interval : ONLY for dynamic GCBBA (static/cbba/sga use 999999)
 
       Arrival rates and comm ranges are derived analytically from map geometry
     """
     configs = []
 
     # ── Map-derived sweep anchors ──────────────────────────────────────────
-    # Average task service time: half the Manhattan perimeter of the grid.
-    avg_service_time = (grid_w + grid_h) / 2
+    avg_service_time = calculate_average_service_time(map_path) if map_path else (grid_w + grid_h) / 2
     capacity = num_agents / (avg_service_time * num_induct)
     diagonal = (grid_w ** 2 + grid_h ** 2) ** 0.5
 
@@ -56,26 +57,16 @@ def get_experiment_configs(
         capacity_fracs = [1.0, 2.0] 
         # One sparse range (35% diagonal) and one full-connectivity range
         range_fracs = [0.35, 1.2] 
-        rerun_intervals = [50]
         batch_task_counts = [80]
 
-    elif mode == "medium":
-        seeds = [42, 123, 456]
-        capacity_fracs = [0.5, 1.0, 1.5, 2.0]
-        # Light → knee → overload → heavy
-        range_fracs = [0.1, 0.2, 0.35, 1.2]
-        rerun_intervals = [25, 50, 100]
-        batch_task_counts = [40, 80, 160]
-
     else:  # full
-        seeds = [42, 123, 456, 789, 1024]
+        seeds = [42, 123, 456]
         # 10 points from 25% to 300% of capacity
         capacity_fracs = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0]
         # 6 points spanning near-disconnected to full-connectivity
         range_fracs = [0.05, 0.1, 0.2, 0.35, 0.6, 1.2]
-        rerun_intervals = [10, 25, 50, 100, 200]
         batch_task_counts = [20, 40, 80, 160]
-    
+
     arrival_rates = sorted(set(
         max(0.001, round(f * capacity, 4)) for f in capacity_fracs
     ))
@@ -89,6 +80,7 @@ def get_experiment_configs(
     QUEUE_MAX_DEPTH = 10
     BATCH_MAX_TIMESTEPS = 3000
     SS_INITIAL_TASKS = 2 * num_agents
+    RERUN_INTERVAL = round(2 * avg_service_time)
 
     ALLOCATION_TIMEOUT_S = 10.0
     WALL_CLOCK_LIMIT_S = 600.0
@@ -100,7 +92,7 @@ def get_experiment_configs(
                 "arrival_rate": ar,
                 "comm_range": cr,
                 "initial_tasks": SS_INITIAL_TASKS,
-                "rerun_interval": 999999,  # no periodic reruns in steady state
+                "rerun_interval": RERUN_INTERVAL,
                 "max_timesteps": MAX_TIMESTEPS,
                 "warmup_timesteps": WARMUP_TIMESTEPS,
                 "stuck_threshold": STUCK_THRESHOLD,
@@ -123,21 +115,6 @@ def get_experiment_configs(
                     "allocation_timeout_s": ALLOCATION_TIMEOUT_S,
                     "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,
                 })
-        if config in ("all", "sensitivity_only"):
-            for ri in rerun_intervals:
-                configs.append({
-                    "experiment_type": "dynamic",
-                    "arrival_rate": ar,
-                    "comm_range": cr,
-                    "initial_tasks": SS_INITIAL_TASKS,
-                    "rerun_interval": ri,  # periodic reruns every N timesteps
-                    "max_timesteps": MAX_TIMESTEPS,
-                    "warmup_timesteps": WARMUP_TIMESTEPS,
-                    "stuck_threshold": STUCK_THRESHOLD,
-                    "queue_max_depth": QUEUE_MAX_DEPTH,
-                    "allocation_timeout_s": ALLOCATION_TIMEOUT_S,
-                    "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,
-                })
 
     return configs
 
@@ -154,8 +131,7 @@ def main():
             "cbba_only",
             "sga_only",
             "dmchba_only",
-            "baseline_only",
-            "sensitivity_only"
+            "baseline_only"
         ],
         default="all",
         help=(
@@ -169,7 +145,6 @@ def main():
             "'sga_only' = SGA-specific baseline configs. "
             "'dmchba_only' = DMCHBA-specific baseline configs. "
             "'baseline_only' = Baseline comparison configs. -- includes CBBA, SGA, and DMCHBA"
-            "'sensitivity_only' = LCBA Sensitivity analysis configs -- runs dynamic LCBA for seperate rerun intervals to analyze convergence and performance trends."
         )
     )
 
@@ -218,8 +193,9 @@ def main():
         args.config,
         num_agents=_map_num_agents,
         num_induct=_map_num_induct,
-        grid_w =_grid_w,
-        grid_h=_grid_h
+        grid_w=_grid_w,
+        grid_h=_grid_h,
+        map_path=config_path,
         )
 
 
