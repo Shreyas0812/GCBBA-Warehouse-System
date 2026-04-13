@@ -88,6 +88,7 @@ class IntegrationOrchestrator:
         self.charge_duration             = energy_config['charge_duration']
         self.charge_rate                 = energy_config['charge_rate']
         self.charging_trigger_multiplier = energy_config['charging_trigger_multiplier']
+        self._validate_energy_config(agent_positions, charging_positions)
 
         # Inject Task Variables
         self._induct_last_injection: Dict[int, int] = {} # last timestep a task was injected at each induct station, keyed by induct station index
@@ -122,6 +123,31 @@ class IntegrationOrchestrator:
             self.grid_map.continuous_to_grid(float(pos[0]), float(pos[1]), float(pos[2]))
             for pos in charging_positions
         ]
+
+    def _validate_energy_config(self, agent_positions: List, charging_positions: List) -> None:
+        """
+        Raise ValueError if any agent's nearest charging station is so far that
+        charging_trigger_multiplier * distance > max_energy.  When that holds the
+        agent's energy can never exceed the trigger threshold, so it will spend the
+        entire simulation navigating to the charger instead of completing tasks.
+        """
+        if not charging_positions:
+            return
+        bad = []
+        for pos in agent_positions:
+            ax, ay = pos[0], pos[1]
+            dist = min(abs(ax - cx) + abs(ay - cy) for (cx, cy, *_) in charging_positions)
+            if self.charging_trigger_multiplier * dist > self.max_energy:
+                bad.append((ax, ay, dist))
+        if bad:
+            required = max(self.charging_trigger_multiplier * d for _, _, d in bad)
+            lines = "\n".join(f"  agent at ({x},{y}): dist={d}, threshold={self.charging_trigger_multiplier*d:.0f}" for x, y, d in bad)
+            raise ValueError(
+                f"Energy config error: {len(bad)} agent(s) will perpetually try to charge "
+                f"(charging_trigger_multiplier={self.charging_trigger_multiplier} × distance > max_energy={self.max_energy}).\n"
+                f"{lines}\n"
+                f"Set max_energy >= {int(required) + 1} in the map YAML to fix this."
+            )
 
     def _load_config(self, config_path: str) -> Tuple[List, List, List, List, Dict]:
         with open(config_path, 'r') as f:

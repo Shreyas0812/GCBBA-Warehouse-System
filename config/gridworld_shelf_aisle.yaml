@@ -281,7 +281,7 @@ create_gridworld_node:
     ]
 
     energy:
-      max_energy: 200
+      max_energy: 435
       charge_duration: 40
       charge_rate: 1
       charging_trigger_multiplier: 3.0
