@@ -7,6 +7,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import sys
 from typing import List, Dict
@@ -19,6 +20,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from helper.machine_info import collect_machine_info
 from helper.map_utils import calculate_average_service_time
 
 def get_experiment_configs(
@@ -219,12 +221,28 @@ def main():
     total_runs = sum(len(cfg["seeds"]) for cfg in configs)
 
     print(f"\n{'='*70}")
-    print(f"LCBA Experiments | map={map_name} | agents={_map_num_agents} | {total_runs} total runs | workers={num_workers}")
-    print(f"Arrival rates:   {sorted(set(c['task_arrival_rate'] for c in configs))}")
-    print(f"Comm ranges:     {sorted(set(c['comm_range'] for c in configs))}")
-    print(f"Batch task counts:{sorted(set(c['initial_tasks'] for c in configs if c['experiment_type']=='batch'))}")
-    print(f"Rerun intervals: {sorted(set(c['rerun_interval'] for c in configs))}")
-    print(f"Output dir:      {output_dir}")
+    print(f"Thesis Experiments | map={map_name} | agents={_map_num_agents} | {total_runs} total runs")
+    print(f"Comm ranges:       {sorted(set(c['comm_range'] for c in configs))}")
+    print(f"SS arrival rates:  {sorted(set(c['arrival_rate'] for c in configs if c['experiment_type'] == 'steady_state'))}")
+    print(f"Batch task counts: {sorted(set(c['initial_tasks'] for c in configs if c['experiment_type'] == 'batch'))}")
+    print(f"Output dir:        {output_dir}")
+
+    # Save experiment metadata + machine info
+    machine_info = collect_machine_info()
+    with open(os.path.join(output_dir, "experiment_config.json"), "w") as f:
+        json.dump(
+            {
+                "experiment": "LCBA Sensitivity Analysis",
+                "map": map_name,
+                "timestamp": timestamp,
+                "total_runs": total_runs,
+                "workers": num_workers,
+                "machine": machine_info,
+                "configs": configs,
+            },
+            f,
+            indent=2,
+        )
 
 if __name__ == "__main__":
     main()
