@@ -17,7 +17,7 @@
 #   Induct stations on left wall, eject stations on right wall.
 #   470 agents match Li et al. 2021 lower-range experiments on this exact map.
 #
-# Grid: 161x63 | Agents: 470 | Induct: 20 | Eject: 19 | Charging: 14
+# Grid: 161x63 | Agents: 200 | Induct: 20 | Eject: 19 | Charging: 14
 #
 # Horizontal layout (x, 0-indexed):
 #   x=0         : left border (1-cell)
