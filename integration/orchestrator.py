@@ -126,24 +126,35 @@ class IntegrationOrchestrator:
 
     def _validate_energy_config(self, agent_positions: List, charging_positions: List) -> None:
         """
-        Raise ValueError if any agent's nearest charging station is so far that
-        charging_trigger_multiplier * distance > max_energy.  When that holds the
-        agent's energy can never exceed the trigger threshold, so it will spend the
-        entire simulation navigating to the charger instead of completing tasks.
+        Raise ValueError if any position an agent visits during task execution is so far
+        from the nearest charger that charging_trigger_multiplier * distance > max_energy.
+        Checks agent starting positions AND induct/eject stations, since the trigger fires
+        based on current position during movement, not just the starting position.
         """
         if not charging_positions:
             return
+
+        # All positions an agent may occupy when the charging check fires
+        positions_to_check = (
+            [(p[0], p[1], "agent") for p in agent_positions]
+            + [(p[0], p[1], "induct") for p in self.induct_positions]
+            + [(p[0], p[1], "eject") for p in self.eject_positions]
+        )
+
         bad = []
-        for pos in agent_positions:
-            ax, ay = pos[0], pos[1]
-            dist = min(abs(ax - cx) + abs(ay - cy) for (cx, cy, *_) in charging_positions)
+        for x, y, kind in positions_to_check:
+            dist = min(abs(x - cx) + abs(y - cy) for (cx, cy, *_) in charging_positions)
             if self.charging_trigger_multiplier * dist > self.max_energy:
-                bad.append((ax, ay, dist))
+                bad.append((x, y, kind, dist))
+
         if bad:
-            required = max(self.charging_trigger_multiplier * d for _, _, d in bad)
-            lines = "\n".join(f"  agent at ({x},{y}): dist={d}, threshold={self.charging_trigger_multiplier*d:.0f}" for x, y, d in bad)
+            required = max(self.charging_trigger_multiplier * d for *_, d in bad)
+            lines = "\n".join(
+                f"  {kind} at ({x},{y}): dist={d}, threshold={self.charging_trigger_multiplier*d:.0f}"
+                for x, y, kind, d in bad
+            )
             raise ValueError(
-                f"Energy config error: {len(bad)} agent(s) will perpetually try to charge "
+                f"Energy config error: {len(bad)} position(s) will perpetually trigger charging "
                 f"(charging_trigger_multiplier={self.charging_trigger_multiplier} × distance > max_energy={self.max_energy}).\n"
                 f"{lines}\n"
                 f"Set max_energy >= {int(required) + 1} in the map YAML to fix this."
