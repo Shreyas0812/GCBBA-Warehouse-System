@@ -72,6 +72,7 @@ class AgentState:
         self.charging_station_pos: Optional[Tuple[int, int, int]] = None # For now the position of the nearest induct station, can be updated to track actual charging stations if different
 
         self.current_timestep: int = 0
+        self.wait_counter: int = 0  # total timesteps spent blocked (used for deadlock-break priority)
 
     def update_from_gcbba(self, assigned_tasks: List[Dict], current_timestep: int):
         """
@@ -147,7 +148,7 @@ class AgentState:
             self.current_path_index = 0
             self.needs_new_path = False
 
-    def step(self, timestep:int) -> bool:
+    def step(self, timestep: int, occupied_positions: set = None) -> bool:
         """
         Execute one step of the agent's current task based on the assigned path
 
@@ -169,6 +170,13 @@ class AgentState:
                 return False
             if self.current_path_index < len(self.current_path):
                 next_pos = self.current_path[self.current_path_index]
+                # BFS mode: wait in place if the next cell is occupied by another agent
+                if (occupied_positions is not None
+                        and tuple(next_pos) != tuple(self.pos)
+                        and tuple(next_pos) in occupied_positions):
+                    self.wait_counter += 1
+                    self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
+                    return False
                 actually_moved = tuple(next_pos) != tuple(self.pos)
                 self.pos = np.array(next_pos, dtype=np.int32)
                 self.current_path_index += 1
@@ -202,6 +210,13 @@ class AgentState:
         # If the agent is currently executing a task, move along the assigned path
         if self.current_path_index < len(self.current_path):
             next_pos = self.current_path[self.current_path_index]
+            # BFS mode: wait in place if the next cell is occupied by another agent
+            if (occupied_positions is not None
+                    and tuple(next_pos) != tuple(self.pos)
+                    and tuple(next_pos) in occupied_positions):
+                self.wait_counter += 1
+                self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
+                return False
             actually_moved = tuple(next_pos) != tuple(self.pos)
             self.pos = np.array(next_pos, dtype=np.int32)
             self.current_path_index += 1
