@@ -76,6 +76,7 @@ def get_experiment_configs(
             configs.append({
                 "config_name": f"lcba_dynamic_ar{ar:.4f}_cr{cr:.1f}_ri{ri}",
                 "allocation_method": "gcbba",
+                "path_planner": "bfs",
                 "task_arrival_rate": ar,
                 "initial_tasks": SS_INITIAL_TASKS,
                 "queue_max_depth": QUEUE_MAX_DEPTH,
@@ -171,6 +172,7 @@ def _run_task(task: Dict):
         task["seed"],
         task["max_timesteps"],
         allocation_method=task["allocation_method"],
+        path_planner=task.get("path_planner", "bfs"),
         initial_tasks=task["initial_tasks"],
         allocation_timeout_s=task["allocation_timeout_s"],
         wall_clock_limit_s=task["wall_clock_limit_s"],
