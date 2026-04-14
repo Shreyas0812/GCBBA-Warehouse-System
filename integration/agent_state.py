@@ -182,6 +182,7 @@ class AgentState:
                 self.current_path_index += 1
                 if actually_moved:  # Wait steps (same cell) don't cost energy
                     self.deplete_energy()
+                    self.wait_counter = 0
                 self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
 
                 if self.current_path_index >= len(self.current_path):
