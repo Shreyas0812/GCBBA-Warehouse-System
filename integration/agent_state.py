@@ -148,7 +148,7 @@ class AgentState:
             self.current_path_index = 0
             self.needs_new_path = False
 
-    def step(self, timestep: int, occupied_positions: set = None) -> bool:
+    def step(self, timestep: int) -> bool:
         """
         Execute one step of the agent's current task based on the assigned path
 
@@ -170,13 +170,6 @@ class AgentState:
                 return False
             if self.current_path_index < len(self.current_path):
                 next_pos = self.current_path[self.current_path_index]
-                # BFS mode: wait in place if the next cell is occupied by another agent
-                if (occupied_positions is not None
-                        and tuple(next_pos) != tuple(self.pos)
-                        and tuple(next_pos) in occupied_positions):
-                    self.wait_counter += 1
-                    self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
-                    return False
                 actually_moved = tuple(next_pos) != tuple(self.pos)
                 self.pos = np.array(next_pos, dtype=np.int32)
                 self.current_path_index += 1
@@ -218,13 +211,6 @@ class AgentState:
         # If the agent is currently executing a task, move along the assigned path
         if self.current_path_index < len(self.current_path):
             next_pos = self.current_path[self.current_path_index]
-            # BFS mode: wait in place if the next cell is occupied by another agent
-            if (occupied_positions is not None
-                    and tuple(next_pos) != tuple(self.pos)
-                    and tuple(next_pos) in occupied_positions):
-                self.wait_counter += 1
-                self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
-                return False
             actually_moved = tuple(next_pos) != tuple(self.pos)
             self.pos = np.array(next_pos, dtype=np.int32)
             self.current_path_index += 1

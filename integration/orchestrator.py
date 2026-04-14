@@ -63,17 +63,12 @@ class IntegrationOrchestrator:
                  max_plan_time: int = 400,
                  Lt: Optional[int] = None,
                  allocation_method: str = "gcbba",  # "gcbba", "sga", "cbba" or "dmchba"
-                 path_planner: str = "bfs",         # "bfs" (default) or "ca_star"
-                 path_window: int = 10              # BFS rolling window size (0 = full path, no windowing)
                  ) -> None:
 
         if allocation_method not in {"gcbba", "sga", "cbba", "dmchba"}:
             raise ValueError(f"Invalid allocation method: {allocation_method}. Must be one of 'gcbba', 'sga', 'cbba', or 'dmchba'.")
-        if path_planner not in {"bfs", "ca_star"}:
-            raise ValueError(f"Invalid path_planner: {path_planner}. Must be 'bfs' or 'ca_star'.")
 
         self.allocation_method = allocation_method
-        self.path_planner = path_planner
         self.task_arrival_rate = task_arrival_rate
         self.induct_queue_capacity = induct_queue_capacity
         self.warmup_timesteps = warmup_timesteps
@@ -85,7 +80,6 @@ class IntegrationOrchestrator:
         self.stuck_threshold = stuck_threshold
         self.prediction_horizon = prediction_horizon
         self.max_plan_time = max_plan_time
-        self.path_window = path_window
         self.Lt = Lt
 
         self.grid_map = GridMap(config_path)
@@ -340,47 +334,10 @@ class IntegrationOrchestrator:
         }
 
         completed_task_ids: List[int] = []
-        if self.path_planner == "bfs":
-            occupied: set = {tuple(a.get_position()) for a in self.agent_states}
-            agent_map = {a.agent_id: a for a in self.agent_states}
-
-            # Detect deadlock cycles and pick one breaker per cycle.
-            # Breakers are moved sideways first so they vacate their cells
-            # before the agents that were blocked by them try to advance.
-            cycle_breakers = self._find_cycle_breakers(occupied)
-            for aid, sideways in cycle_breakers.items():
-                a = agent_map[aid]
-                old_pos = tuple(a.get_position())
-                if sideways is not None:
-                    a.pos = np.array(sideways, dtype=np.int32)
-                    a.deplete_energy()
-                    a.position_history.append((sideways[0], sideways[1], sideways[2], self.current_timestep))
-                    a.needs_new_path = True   # replan BFS from new position
-                    occupied.discard(old_pos)
-                    occupied.add(sideways)
-                else:
-                    # Every neighbour is occupied — stay put this timestep
-                    a.position_history.append((old_pos[0], old_pos[1], old_pos[2], self.current_timestep))
-                a.wait_counter += 1
-
-            # Process all other agents normally (breakers already handled above)
-            breaker_ids = set(cycle_breakers.keys())
-            for agent_state in self.agent_states:
-                if agent_state.agent_id in breaker_ids:
-                    continue
-                old_pos = tuple(agent_state.get_position())
-                completed = agent_state.step(self.current_timestep, occupied_positions=occupied)
-                new_pos = tuple(agent_state.get_position())
-                if new_pos != old_pos:
-                    occupied.discard(old_pos)
-                    occupied.add(new_pos)
-                if completed and agent_state.completed_tasks:
-                    completed_task_ids.append(agent_state.completed_tasks[-1].task_id)
-        else:
-            for agent_state in self.agent_states:
-                completed = agent_state.step(self.current_timestep)
-                if completed and agent_state.completed_tasks:
-                    completed_task_ids.append(agent_state.completed_tasks[-1].task_id)
+        for agent_state in self.agent_states:
+            completed = agent_state.step(self.current_timestep)
+            if completed and agent_state.completed_tasks:
+                completed_task_ids.append(agent_state.completed_tasks[-1].task_id)
 
         for task_id in completed_task_ids:
             self.completed_task_ids.add(task_id)
@@ -650,80 +607,6 @@ class IntegrationOrchestrator:
         
         return assignments_dict
 
-    def _find_cycle_breakers(self, occupied: set) -> dict:
-        """
-        Build a waiting graph (edge A→B means A's next step is blocked by B),
-        find all cycles in O(n) using chain-following DFS (each node has at most
-        one outgoing edge), then pick one agent per cycle to break it.
-
-        The breaker is the lowest-priority agent in the cycle:
-          priority = (wait_counter DESC, agent_id ASC)
-        i.e. the agent that has waited the least (and, on a tie, the highest ID).
-
-        Returns: {agent_id: sideways_pos_or_None}
-          sideways_pos — a free passable neighbour that is not the agent's
-                         intended next cell (None if every neighbour is occupied).
-        """
-        pos_to_agent = {tuple(a.get_position()): a for a in self.agent_states}
-        agent_map   = {a.agent_id: a for a in self.agent_states}
-
-        # Build blocks[aid] = aid_of_blocker | None
-        blocks = {}
-        intended_next = {}
-        for a in self.agent_states:
-            cur = tuple(a.get_position())
-            if a.current_path and a.current_path_index < len(a.current_path):
-                nxt = tuple(a.current_path[a.current_path_index])
-            else:
-                nxt = cur
-            intended_next[a.agent_id] = nxt
-            if nxt != cur and nxt in occupied:
-                blocker = pos_to_agent.get(nxt)
-                blocks[a.agent_id] = blocker.agent_id if blocker else None
-            else:
-                blocks[a.agent_id] = None
-
-        # Find cycles: follow chains, each node has ≤1 outgoing edge
-        visited  = set()
-        breakers = {}
-
-        for start_id in blocks:
-            if start_id in visited:
-                continue
-            chain       = []
-            chain_index = {}
-            current     = start_id
-
-            while current is not None and current not in visited and current in blocks:
-                chain_index[current] = len(chain)
-                chain.append(current)
-                visited.add(current)
-                current = blocks[current]
-
-            if current is not None and current in chain_index:
-                # Cycle found: chain[chain_index[current]:]
-                cycle = chain[chain_index[current]:]
-
-                # Lowest-priority agent breaks the cycle
-                breaker_id = min(
-                    cycle,
-                    key=lambda aid: (agent_map[aid].wait_counter, -agent_map[aid].agent_id)
-                )
-                breaker     = agent_map[breaker_id]
-                breaker_pos = tuple(breaker.get_position())
-                intended    = intended_next[breaker_id]
-
-                # Find a free passable neighbour to step sideways into
-                sideways = None
-                for nb in self.grid_map.get_neighbors(*breaker_pos):
-                    if nb not in occupied and nb != intended:
-                        sideways = nb
-                        break
-
-                breakers[breaker_id] = sideways
-
-        return breakers
-
     def _plan_paths(self) -> None:
         replan_agents = [agent_state for agent_state in self.agent_states if agent_state.needs_new_path] # Set in gcbba
 
@@ -736,8 +619,7 @@ class IntegrationOrchestrator:
 
             if goal is None:
                 start = agent_state.get_position()
-                if self.path_planner == "ca_star":
-                    self.ca.reserve_path([start], agent_state.agent_id, start_time=self.current_timestep)
+                self.ca.reserve_path([start], agent_state.agent_id, start_time=self.current_timestep)
                 agent_state.needs_new_path = False
                 continue
 
@@ -778,37 +660,22 @@ class IntegrationOrchestrator:
                         agent_state.start_charging(charger_pos_from_eject)
                         goal = agent_state.get_current_goal()  # Refresh — now points to charging station
 
-            if self.path_planner == "bfs":
-                # BFS gradient descent: O(path_length), no search overhead.
-                # Collision avoidance is handled reactively in step() — agents
-                # wait in place when their next cell is occupied.
-                # Rolling window: only commit to the first path_window steps so
-                # agents replan frequently and naturally route around congestion.
+            # CA*: time-expanded A* with space-time reservations.
+            # For charging navigation use BFS gradient descent (O(1) per step).
+            self.ca.clear_agent_reservations(agent_state.agent_id)
+            if agent_state.is_navigating_to_charger:
                 path = self.grid_map.reconstruct_path_to_station(start, goal)
-                if not path or (path == [start] and start != goal):
-                    path = [start]  # unreachable — stay in place
-                elif self.path_window > 0 and len(path) > self.path_window + 1:
-                    path = path[:self.path_window + 1]  # +1 because start is stripped in assign_path
             else:
-                # CA* (ca_star): time-expanded A* with space-time reservations.
-                # For charging navigation use BFS gradient descent (already O(1)
-                # per step and the goal is a fixed map position).
-                self.ca.clear_agent_reservations(agent_state.agent_id)
-                if agent_state.is_navigating_to_charger:
-                    path = self.grid_map.reconstruct_path_to_station(start, goal)
-                    if self.path_window > 0 and len(path) > self.path_window + 1:
-                        path = path[:self.path_window + 1]
-                else:
-                    path = self.ca.plan_path_with_reservations(
-                        start=start,
-                        goal=goal,
-                        agent_id=agent_state.agent_id,
-                        max_time=self.current_timestep + self.max_plan_time,
-                        start_time=self.current_timestep
-                    )
-                if path is None:
-                    path = [start]  # No path found, stay in place
-                self.ca.reserve_path(path, agent_state.agent_id, start_time=self.current_timestep)
+                path = self.ca.plan_path_with_reservations(
+                    start=start,
+                    goal=goal,
+                    agent_id=agent_state.agent_id,
+                    max_time=self.current_timestep + self.max_plan_time,
+                    start_time=self.current_timestep
+                )
+            if path is None:
+                path = [start]  # No path found, stay in place
+            self.ca.reserve_path(path, agent_state.agent_id, start_time=self.current_timestep)
 
             agent_state.assign_path(path)
 
