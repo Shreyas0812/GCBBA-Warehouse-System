@@ -49,7 +49,7 @@ def get_experiment_configs(
     diagonal = (grid_w ** 2 + grid_h ** 2) ** 0.5
 
 
-    seeds = [5, 42, 123, 456]
+    seeds = [42, 123, 456]
 
     capacity_fracs = [0.5, 1.0, 1.5, 2.0]  # Light → knee → overload → heavy
     arrival_rates = sorted(set(max(0.001, round(f * capacity, 4)) for f in capacity_fracs))
