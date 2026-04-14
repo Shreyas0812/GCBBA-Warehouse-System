@@ -796,12 +796,17 @@ class IntegrationOrchestrator:
                 self.ca.clear_agent_reservations(agent_state.agent_id)
                 if agent_state.is_navigating_to_charger:
                     path = self.grid_map.reconstruct_path_to_station(start, goal)
+                    if self.path_window > 0 and len(path) > self.path_window + 1:
+                        path = path[:self.path_window + 1]
                 else:
+                    # Limit search horizon to path_window when set — reduces CA* search
+                    # cost from O(max_plan_time × |V|) to O(path_window × |V|) per call.
+                    horizon = self.path_window if self.path_window > 0 else self.max_plan_time
                     path = self.ca.plan_path_with_reservations(
                         start=start,
                         goal=goal,
                         agent_id=agent_state.agent_id,
-                        max_time=self.max_plan_time,
+                        max_time=horizon,
                         start_time=self.current_timestep
                     )
                 if path is None:
