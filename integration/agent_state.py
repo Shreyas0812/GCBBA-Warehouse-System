@@ -179,17 +179,10 @@ class AgentState:
                 self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
 
                 if self.current_path_index >= len(self.current_path):
-                    if (self.charging_station_pos is not None
-                            and tuple(self.pos) != self.charging_station_pos):
-                        # Windowed path ended before reaching charger — replan next window
-                        self.current_path = None
-                        self.current_path_index = 0
-                        self.needs_new_path = True
-                    else:
-                        self.is_navigating_to_charger = False
-                        self.is_charging = True
-                        self.is_idle = True  # Agent is idle while charging
-                        self.needs_new_path = False
+                    self.is_navigating_to_charger = False
+                    self.is_charging = True
+                    self.is_idle = True  # Agent is idle while charging
+                    self.needs_new_path = False
 
             return False # No task completion during navigation to charger
         
@@ -226,7 +219,7 @@ class AgentState:
             if self.current_path_index >= len(self.current_path):
                 goal = self.get_current_goal()
                 if goal is not None and tuple(self.pos) != goal:
-                    # Windowed path ended before reaching goal — replan next window
+                    # Path exhausted without reaching goal (CA* returned no-path fallback) — replan
                     self.current_path = None
                     self.current_path_index = 0
                     self.needs_new_path = True
