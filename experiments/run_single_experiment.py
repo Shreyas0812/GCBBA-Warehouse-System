@@ -184,7 +184,8 @@ def run_single_sensitivity_experiment(
     seed: int,
     max_timesteps: int,
     allocation_method: str = "gcbba",
-    path_planner: str = "bfs",
+    path_planner: str = "ca_star",
+    path_window: int = 10,
     initial_tasks: int = 0,
     allocation_timeout_s: Optional[float] = None,
     wall_clock_limit_s: Optional[float] = None,
@@ -204,6 +205,7 @@ def run_single_sensitivity_experiment(
         max_plan_time=max_plan_time,
         allocation_method=allocation_method,
         path_planner=path_planner,
+        path_window=path_window,
         allocation_timeout_s=allocation_timeout_s,
         wall_clock_limit_s=wall_clock_limit_s,
     )

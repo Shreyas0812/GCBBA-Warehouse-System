@@ -173,6 +173,7 @@ def _run_task(task: Dict):
         task["max_timesteps"],
         allocation_method=task["allocation_method"],
         path_planner=task.get("path_planner", "bfs"),
+        path_window=task.get("path_window", 10),
         initial_tasks=task["initial_tasks"],
         allocation_timeout_s=task["allocation_timeout_s"],
         wall_clock_limit_s=task["wall_clock_limit_s"],
@@ -197,6 +198,18 @@ def main():
         ),
     )
 
+    parser.add_argument(
+        "--path_planner",
+        default="ca_star",
+        choices=["bfs", "ca_star"],
+        help="Path planner to use (default: ca_star)",
+    )
+    parser.add_argument(
+        "--path_window",
+        type=int,
+        default=10,
+        help="Rolling window size for path planning (0 = full path; default: 10)",
+    )
     parser.add_argument(
         "--map",
         default="gridworld_warehouse_small",
@@ -281,6 +294,8 @@ def main():
                 "seed": seed,
                 "max_timesteps": cfg["max_timesteps"],
                 "allocation_method": cfg["allocation_method"],
+                "path_planner": args.path_planner,
+                "path_window": args.path_window,
                 "initial_tasks": cfg["initial_tasks"],
                 "allocation_timeout_s": cfg["allocation_timeout_s"],
                 "wall_clock_limit_s": cfg["wall_clock_limit_s"],
