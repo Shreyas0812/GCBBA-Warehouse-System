@@ -63,7 +63,8 @@ class IntegrationOrchestrator:
                  max_plan_time: int = 400,
                  Lt: Optional[int] = None,
                  allocation_method: str = "gcbba",  # "gcbba", "sga", "cbba" or "dmchba"
-                 path_planner: str = "bfs"          # "bfs" (default) or "ca_star"
+                 path_planner: str = "bfs",         # "bfs" (default) or "ca_star"
+                 path_window: int = 10              # BFS rolling window size (0 = full path, no windowing)
                  ) -> None:
 
         if allocation_method not in {"gcbba", "sga", "cbba", "dmchba"}:
@@ -84,6 +85,7 @@ class IntegrationOrchestrator:
         self.stuck_threshold = stuck_threshold
         self.prediction_horizon = prediction_horizon
         self.max_plan_time = max_plan_time
+        self.path_window = path_window
         self.Lt = Lt
 
         self.grid_map = GridMap(config_path)
@@ -780,9 +782,13 @@ class IntegrationOrchestrator:
                 # BFS gradient descent: O(path_length), no search overhead.
                 # Collision avoidance is handled reactively in step() — agents
                 # wait in place when their next cell is occupied.
+                # Rolling window: only commit to the first path_window steps so
+                # agents replan frequently and naturally route around congestion.
                 path = self.grid_map.reconstruct_path_to_station(start, goal)
-                if not path or path == [start] and start != goal:
+                if not path or (path == [start] and start != goal):
                     path = [start]  # unreachable — stay in place
+                elif self.path_window > 0 and len(path) > self.path_window + 1:
+                    path = path[:self.path_window + 1]  # +1 because start is stripped in assign_path
             else:
                 # CA* (ca_star): time-expanded A* with space-time reservations.
                 # For charging navigation use BFS gradient descent (already O(1)
