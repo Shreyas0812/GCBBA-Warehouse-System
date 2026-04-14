@@ -276,9 +276,6 @@ class AgentState:
         """
         Get the current position of the agent
         """
-        if self.current_path is not None and self.current_path_index > 0:
-            # Return the last position on the path that the agent has reached
-            return self.current_path[self.current_path_index - 1]
         return (int(self.pos[0]), int(self.pos[1]), int(self.pos[2]))
     
     def get_predicted_position(self, steps_ahead: int = 5) -> Tuple[int, int, int]:
