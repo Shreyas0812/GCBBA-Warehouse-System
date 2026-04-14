@@ -230,7 +230,7 @@ class AgentState:
             self.current_path_index += 1
             if actually_moved:  # Wait steps (same cell) don't cost energy
                 self.deplete_energy()
-
+                self.wait_counter = 0
             if self.current_task is not None:
                 self.current_task.current_path_index = self.current_path_index
                 
