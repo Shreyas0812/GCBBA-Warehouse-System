@@ -13,7 +13,7 @@ import yaml as _yaml
 
 from helper.machine_info import collect_machine_info
 from helper.map_utils import calculate_average_service_time
-from run_single_experiment import run_single_sensitivity_experiment
+from run_single_ri_sensitivity_experiment import run_single_sensitivity_experiment
 from SensitivityMetrics import SensitivityMetrics  # used for type hints and saving
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
