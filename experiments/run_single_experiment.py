@@ -106,3 +106,38 @@ class MetricsOrchestrator(IntegrationOrchestrator):
 
         self._tasks_completed_over_time.append(len(self.completed_task_ids))
         return result
+    
+    def collect_steady_state_metrics(self, warmup_timesteps: int, **kwargs) -> RunMetrics:
+        """Collect metrics for a steady-state run (throughput, wait time, queue depth)."""
+        m = RunMetrics()
+        m.num_tasks_completed = len(self.completed_task_ids)
+        # self._collect_common_metrics(m, **kwargs)
+
+        # ── Throughput ────────────────────────────────────────────
+        m.total_tasks_injected = self._next_task_id
+        m.tasks_dropped_by_queue_cap = self._tasks_dropped_by_cap
+        if self._queue_depth_snapshots:
+            m.avg_queue_depth = round(float(np.mean(self._queue_depth_snapshots)), 3)
+
+        seen: set = set()
+        ss_tasks = []
+        for s in self.agent_states:
+            for t in s.completed_tasks:
+                if t.task_id not in seen and t.start_time is not None and t.start_time >= warmup_timesteps:
+                    seen.add(t.task_id)
+                    ss_tasks.append(t)
+        ss_steps = max(1, self.current_timestep - warmup_timesteps)
+        m.steady_state_tasks_completed = len(ss_tasks)
+        m.throughput = round(len(ss_tasks) / ss_steps, 4)
+        m.throughput_per_agent = round(m.throughput / kwargs["num_agents"], 6) if kwargs.get("num_agents") else 0.0
+
+        wait_times = []
+        for t in ss_tasks:
+            inj = self._task_injection_time.get(t.task_id)
+            if inj is not None and t.start_time is not None:
+                wait_times.append(t.start_time - inj)
+        if wait_times:
+            m.avg_task_wait_time = round(float(np.mean(wait_times)), 2)
+            m.max_task_wait_time = round(float(max(wait_times)), 2)
+
+        return m
