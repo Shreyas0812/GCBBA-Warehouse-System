@@ -22,10 +22,10 @@ from SensitivityMetrics import SensitivityMetrics
 
 
 # ─────────────────────────────────────────────────────────────────
-#  InstrumentedOrchestrator
+#  SensitivityOrchestrator
 # ─────────────────────────────────────────────────────────────────
 
-class InstrumentedOrchestrator(IntegrationOrchestrator):
+class SensitivityOrchestrator(IntegrationOrchestrator):
     def __init__(self, *args, **kwargs):
         self._wall_time_limit_s: Optional[float] = kwargs.pop("wall_clock_limit_s", None)
         kwargs.pop("allocation_timeout_s", None)  # not used for gcbba, discard
@@ -191,7 +191,7 @@ def run_single_sensitivity_experiment(
 ) -> SensitivityMetrics:
     np.random.seed(seed)
 
-    orch = InstrumentedOrchestrator(
+    orch = SensitivityOrchestrator(
         config_path=config_path,
         task_arrival_rate=task_arrival_rate,
         induct_queue_capacity=queue_max_depth,
