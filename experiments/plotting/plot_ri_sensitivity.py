@@ -33,8 +33,9 @@ def ri_display(val):
 
 def load(csv_path: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
-    # Drop runs that hit a ceiling — they are invalid data points
-    df = df[~df["hit_timestep_ceiling"] & ~df["hit_wall_clock_ceiling"]]
+    # Drop runs that hit the timestep ceiling (incomplete) but keep wall-clock-limited
+    # runs — throughput is normalized per-timestep so wall-clock hits are still valid.
+    df = df[~df["hit_timestep_ceiling"]]
     return df
 
 
