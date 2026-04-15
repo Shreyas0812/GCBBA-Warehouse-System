@@ -53,4 +53,12 @@ class MetricsOrchestrator(IntegrationOrchestrator):
 
         # Time series
         self._tasks_completed_over_time: List[int] = []
-        
+    
+    def run_allocation(self) -> None:
+        pending = len(self._pending_task_ids)
+        t0 = time.perf_counter()
+        IntegrationOrchestrator.run_allocation(self)
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        self._allocation_times_ms.append(elapsed_ms)
+        self._allocation_call_timesteps.append(self.current_timestep)
+        self._tasks_per_allocation_call.append(pending)
