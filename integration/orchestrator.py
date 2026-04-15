@@ -626,6 +626,36 @@ class IntegrationOrchestrator:
 
             start = agent_state.get_position()
 
+            # At the eject→induct transition (first path plan for a new to_induct leg),
+            # verify the agent has enough energy for the full cycle: induct leg + eject leg
+            # + reach charger. No buffer — this is a hard floor. The to_eject gate below
+            # provides the conservative (1.3×) safety net for congestion-induced overruns.
+            if (agent_state.task_phase == "to_induct"
+                    and agent_state.current_task is not None
+                    and agent_state.current_path is None):
+                induct_pos = agent_state.current_task.induct_pos
+                eject_pos  = agent_state.current_task.eject_pos
+                dist_to_induct       = self._bfs_dist(start, induct_pos)
+                dist_induct_to_eject = self._bfs_dist(induct_pos, eject_pos)
+                charger_dist, charger_pos = self._get_nearest_charger_from_pos(eject_pos)
+
+                if charger_pos is not None:
+                    energy_needed = dist_to_induct + dist_induct_to_eject + charger_dist
+                    if agent_state.energy < energy_needed:
+                        aborted_task_id = agent_state.current_task.task_id
+                        tqdm.write(
+                            f"[t={self.current_timestep}] Agent {agent_state.agent_id}: energy "
+                            f"({agent_state.energy}) too low for full cycle — induct ({dist_to_induct}) "
+                            f"+ eject ({dist_induct_to_eject}) + charger ({charger_dist}) = {energy_needed}. "
+                            f"Dropping task {aborted_task_id} before starting induct leg."
+                        )
+                        agent_state.start_charging(charger_pos)
+                        self._pending_task_ids.add(aborted_task_id)
+                        induct_idx = self._task_to_induct.get(aborted_task_id)
+                        if induct_idx is not None:
+                            self._induct_queue_depth[induct_idx] += 1
+                        goal = agent_state.get_current_goal()
+
             # At the induct→eject transition, verify the agent can complete the eject
             # leg AND reach a charger afterward.  Runs unconditionally — even for
             # single-task agents (planned_tasks == []) — because the to_eject skip in
