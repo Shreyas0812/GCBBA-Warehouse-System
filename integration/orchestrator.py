@@ -632,18 +632,8 @@ class IntegrationOrchestrator:
             # _check_and_start_charging relies on this gate having already run.
             if (agent_state.task_phase == "to_eject"
                     and agent_state.current_task is not None):
-                def _bfs_dist(a, b):
-                    """BFS obstacle-aware distance between two grid positions."""
-                    table = self.grid_map.bfs_distances_from_station.get(b)
-                    if table is not None and a in table:
-                        return table[a]
-                    table = self.grid_map.bfs_distances_from_station.get(a)
-                    if table is not None and b in table:
-                        return table[b]
-                    return abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2])
-
                 eject_pos = agent_state.current_task.eject_pos
-                dist_to_eject = _bfs_dist(start, eject_pos)
+                dist_to_eject = self._bfs_dist(start, eject_pos)
                 charger_dist_from_eject, charger_pos_from_eject = self._get_nearest_charger_from_pos(eject_pos)
 
                 # If the agent cannot safely complete the eject leg and then reach a
@@ -735,6 +725,19 @@ class IntegrationOrchestrator:
     
     
     #################### Energy and Charging Logic (Optional) ####################
+    def _bfs_dist(self, a: Tuple[int, int, int], b: Tuple[int, int, int]) -> int:
+        """BFS obstacle-aware distance between two grid positions.
+        Uses precomputed BFS tables keyed by station position; falls back to
+        Manhattan distance if neither endpoint has a precomputed table.
+        """
+        table = self.grid_map.bfs_distances_from_station.get(b)
+        if table is not None and a in table:
+            return table[a]
+        table = self.grid_map.bfs_distances_from_station.get(a)
+        if table is not None and b in table:
+            return table[b]
+        return abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2])
+
     def _get_nearest_charger_from_pos(self, grid_pos: Tuple[int, int, int]) -> Tuple[Optional[int], Optional[Tuple[int, int, int]]]:
         """
         Returns (bfs_distance, charger_grid_pos) for the nearest charging station
