@@ -243,13 +243,13 @@ class IntegrationOrchestrator:
         Lt = self.Lt if self.Lt is not None else 1
         self.gcbba_orchestrator_initial = GCBBA_Orchestrator(G, D, [], agents, Lt)
 
-        if self.task_arrival_rate > 0:
-            print(f"Orchestrator initialized with {self.num_agents} agents. "
-                  f"Steady-state mode: arrival_rate={self.task_arrival_rate}/ts/station, "
-                  f"induct_queue_capacity={self.induct_queue_capacity}.")
-        else:
-            print(f"Orchestrator initialized with {self.num_agents} agents. "
-                  f"Batch mode: {self.initial_tasks} pre-generated tasks, no ongoing injection.")
+        # if self.task_arrival_rate > 0:
+        #     print(f"Orchestrator initialized with {self.num_agents} agents. "
+        #           f"Steady-state mode: arrival_rate={self.task_arrival_rate}/ts/station, "
+        #           f"induct_queue_capacity={self.induct_queue_capacity}.")
+        # else:
+        #     print(f"Orchestrator initialized with {self.num_agents} agents. "
+        #           f"Batch mode: {self.initial_tasks} pre-generated tasks, no ongoing injection.")
 
     def _init_agent_states(self) -> None:
         self.agent_states: List[AgentState] = []
@@ -359,10 +359,10 @@ class IntegrationOrchestrator:
         ]
         newly_charging_agents = self._check_and_start_charging()
 
-        if newly_available_agents:
-            tqdm.write(f"Agents finished charging at timestep {self.current_timestep}: {newly_available_agents}")
-        if newly_charging_agents:
-            tqdm.write(f"Agents starting to charge at timestep {self.current_timestep}: {newly_charging_agents}")
+        # if newly_available_agents:
+        #     tqdm.write(f"Agents finished charging at timestep {self.current_timestep}: {newly_available_agents}")
+        # if newly_charging_agents:
+        #     tqdm.write(f"Agents starting to charge at timestep {self.current_timestep}: {newly_charging_agents}")
         if newly_charging_agents or newly_available_agents:
             self.run_allocation()
 
@@ -420,7 +420,8 @@ class IntegrationOrchestrator:
                     f"{remaining_tasks} tasks stalled. Resuming in ~{max(1, min_charge_remaining)} timesteps."
                 )
             else:
-                tqdm.write(f"[t={self.current_timestep}] No active agents. Skipping allocation.")
+                # tqdm.write(f"[t={self.current_timestep}] No active agents. Skipping allocation.")
+                pass
             self.last_gcbba_timestep = self.current_timestep
             return
 
@@ -438,7 +439,7 @@ class IntegrationOrchestrator:
                 agent_state.update_from_gcbba([], self.current_timestep)
             self.latest_assignment = [[] for _ in range(self.num_agents)]
             self.last_gcbba_timestep = self.current_timestep
-            tqdm.write(f"No active tasks to allocate at timestep {self.current_timestep}. Skipping GCBBA run.")
+            # tqdm.write(f"No active tasks to allocate at timestep {self.current_timestep}. Skipping GCBBA run.")
             return
         
         # Build updated char_a only for active (non-charging) agents
@@ -526,14 +527,14 @@ class IntegrationOrchestrator:
 
         allocation_time_ms = (t_allocation_end - t_allocation_start) * 1000
 
-        tqdm.write(
-            f"[t={self.current_timestep}] {self.allocation_method.upper()}: "
-            f"{nt_active} active tasks, "
-            f"{len(excluded_task_ids)} excluded "
-            f"({len(self.completed_task_ids)} done, "
-            f"{len(executing_task_ids)} executing). "
-            f"Score={total_score:.2f}, Makespan={makespan:.2f}, Time={allocation_time_ms:.2f}ms"
-        )
+        # tqdm.write(
+        #     f"[t={self.current_timestep}] {self.allocation_method.upper()}: "
+        #     f"{nt_active} active tasks, "
+        #     f"{len(excluded_task_ids)} excluded "
+        #     f"({len(self.completed_task_ids)} done, "
+        #     f"{len(executing_task_ids)} executing). "
+        #     f"Score={total_score:.2f}, Makespan={makespan:.2f}, Time={allocation_time_ms:.2f}ms"
+        # )
         
         # If a timeout cancelled this call, bail out before mutating any state.
         # The zombie thread may still reach this point after the main thread moved on.

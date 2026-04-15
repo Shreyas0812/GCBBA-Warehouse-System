@@ -46,14 +46,14 @@ class GridMap:
         induct_cells = np.sum(self.grid == 2)
         eject_cells = np.sum(self.grid == 3)
         charging_cells = np.sum(self.grid == 4)
-        print("Grid Initialized:")
-        print(f" - Dimensions: {self.width} x {self.height} x {self.depth}")
-        print(f" - Total Cells: {total_cells}")
-        print(f" - Obstacle Cells: {obstacle_cells}")
-        print(f" - Induct Stations: {induct_cells}")
-        print(f" - Eject Stations: {eject_cells}")
-        print(f" - Charging Stations: {charging_cells}")
-        print(f" - Resolution: {self.resolution}")
+        # print("Grid Initialized:")
+        # print(f" - Dimensions: {self.width} x {self.height} x {self.depth}")
+        # print(f" - Total Cells: {total_cells}")
+        # print(f" - Obstacle Cells: {obstacle_cells}")
+        # print(f" - Induct Stations: {induct_cells}")
+        # print(f" - Eject Stations: {eject_cells}")
+        # print(f" - Charging Stations: {charging_cells}")
+        # print(f" - Resolution: {self.resolution}")
 
 
     def mark_obstacles(self, obstacles_regions_flat):

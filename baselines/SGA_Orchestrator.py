@@ -377,6 +377,6 @@ if __name__ == "__main__":
     assig, tot_score, makespan = orch_sga.launch_agents()
     tf0 = np.round(1000 * (time.time() - t0))
 
-    print("SGA - total score = {}; max score = {}; time = {} ms".format(tot_score, makespan, tf0))
-    print("Assignment = {}".format(assig))
+    # print("SGA - total score = {}; max score = {}; time = {} ms".format(tot_score, makespan, tf0))
+    # print("Assignment = {}".format(assig))
 
