@@ -647,18 +647,25 @@ class IntegrationOrchestrator:
                 charger_dist_from_eject, charger_pos_from_eject = self._get_nearest_charger_from_pos(eject_pos)
 
                 # If the agent cannot safely complete the eject leg and then reach a
-                # charger, abort the current task and navigate to charge immediately.
-                # The aborted task re-enters the GCBBA pool on the next allocation run.
+                # charger, abort the current task, navigate to charge immediately, and
+                # re-queue the task into _pending_task_ids so _detect_events() idle+pending
+                # trigger fires on the same timestep and reallocates it without delay.
                 if charger_pos_from_eject is not None:
                     energy_to_survive = dist_to_eject + charger_dist_from_eject
                     if agent_state.energy < int(energy_to_survive * 1.3):
+                        aborted_task_id = agent_state.current_task.task_id
                         tqdm.write(
                             f"[t={self.current_timestep}] Agent {agent_state.agent_id}: energy "
                             f"({agent_state.energy}) too low for eject ({dist_to_eject} steps) + "
                             f"charger ({charger_dist_from_eject} steps). "
-                            f"Aborting task {agent_state.current_task.task_id}, redirecting to charger."
+                            f"Aborting task {aborted_task_id}, redirecting to charger."
                         )
                         agent_state.start_charging(charger_pos_from_eject)
+                        # Re-queue the aborted task so allocation triggers correctly
+                        self._pending_task_ids.add(aborted_task_id)
+                        induct_idx = self._task_to_induct.get(aborted_task_id)
+                        if induct_idx is not None:
+                            self._induct_queue_depth[induct_idx] += 1
                         goal = agent_state.get_current_goal()  # Refresh — now points to charging station
 
             # CA*: time-expanded A* with space-time reservations.
