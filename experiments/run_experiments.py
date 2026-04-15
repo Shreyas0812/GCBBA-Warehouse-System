@@ -22,6 +22,7 @@ if PROJECT_ROOT not in sys.path:
 
 from helper.machine_info import collect_machine_info
 from helper.map_utils import calculate_average_service_time
+from Metrics import RunMetrics
 
 def get_experiment_configs(
     mode: str = 'full',
@@ -101,11 +102,15 @@ def get_experiment_configs(
         max(num_agents, round(f * _batch_capacity)) for f in batch_fracs
     ))
 
+    METHODS = ["gcbba", "cbba", "sga"]
+
     if config in ("all", "ss_only"):
-        for ar, cr in itertools.product(ss_arrival_rates, comm_ranges):
+        for method, ar, cr in itertools.product(METHODS, ss_arrival_rates, comm_ranges):
             configs.append({
+                "config_name": f"{method}_ss_ar{ar:.4f}_cr{cr:.1f}",
+                "allocation_method": method,
                 "experiment_type": "steady_state",
-                "arrival_rate": ar,
+                "task_arrival_rate": ar,
                 "comm_range": cr,
                 "initial_tasks": SS_INITIAL_TASKS,
                 "rerun_interval": RERUN_INTERVAL,
@@ -119,13 +124,15 @@ def get_experiment_configs(
             })
 
     if config in ("all", "batch_only"):
-        for btc, cr in itertools.product(batch_task_counts, comm_ranges):
+        for method, btc, cr in itertools.product(METHODS, batch_task_counts, comm_ranges):
             configs.append({
+                "config_name": f"{method}_batch_tc{btc}_cr{cr:.1f}",
+                "allocation_method": method,
                 "experiment_type": "batch",
-                "arrival_rate": 0.0,  # no arrivals in batch mode
+                "task_arrival_rate": 0.0,
                 "comm_range": cr,
                 "initial_tasks": btc,
-                "rerun_interval": 999999,  # no periodic reruns in batch mode
+                "rerun_interval": 999999,
                 "max_timesteps": BATCH_MAX_TIMESTEPS,
                 "warmup_timesteps": 0,
                 "stuck_threshold": STUCK_THRESHOLD,
@@ -183,18 +190,25 @@ def main():
         "--map",
         default="gridworld_warehouse_small",
         help="Which map to run experiments on (default: gridworld_warehouse_small)",
-    ),
+    )
+
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="Number of parallel workers (default: 0 = use all CPU cores)",
+    )
 
     args = parser.parse_args()
 
     map_name = args.map.replace(".yaml", "")
 
-    config_path = os.path.join(PROJECT_ROOT, "config", f"{map_name}.yaml")
-    if not os.path.exists(config_path):
-        print(f"ERROR: config file not found for map '{map_name}': {config_path}")
+    map_path = os.path.join(PROJECT_ROOT, "config", f"{map_name}.yaml")
+    if not os.path.exists(map_path):
+        print(f"ERROR: map file not found for map '{map_name}': {map_path}")
         sys.exit(1)
 
-    with open(config_path) as f:
+    with open(map_path) as f:
         cfg = yaml.safe_load(f)
     _params = cfg["create_gridworld_node"]["ros__parameters"]
     _map_num_agents = len(_params["agent_positions"]) // 4
@@ -214,7 +228,7 @@ def main():
         num_induct=_map_num_induct,
         grid_w=_grid_w,
         grid_h=_grid_h,
-        map_path=config_path,
+        map_path=map_path,
         )
 
     num_workers = args.workers if args.workers > 0 else os.cpu_count()
@@ -223,7 +237,7 @@ def main():
     print(f"\n{'='*70}")
     print(f"Thesis Experiments | map={map_name} | agents={_map_num_agents} | {total_runs} total runs")
     print(f"Comm ranges:       {sorted(set(c['comm_range'] for c in configs))}")
-    print(f"SS arrival rates:  {sorted(set(c['arrival_rate'] for c in configs if c['experiment_type'] == 'steady_state'))}")
+    print(f"SS arrival rates:  {sorted(set(c['task_arrival_rate'] for c in configs if c['experiment_type'] == 'steady_state'))}")
     print(f"Batch task counts: {sorted(set(c['initial_tasks'] for c in configs if c['experiment_type'] == 'batch'))}")
     print(f"Output dir:        {output_dir}")
 
@@ -244,5 +258,41 @@ def main():
             indent=2,
         )
 
+    # Build flattened list of (config, seed) pairs for execution
+    tasks = []
+    for cfg in configs:
+        for seed in cfg["seeds"]:
+            tasks.append({
+                "config_path": map_path,
+                "config_name": map_name,
+                "task_arrival_rate": cfg["task_arrival_rate"],
+                "queue_max_depth": cfg["queue_max_depth"],
+                "warmup_timesteps": cfg["warmup_timesteps"],
+                "comm_range": cfg["comm_range"],
+                "rerun_interval": cfg["rerun_interval"],
+                "stuck_threshold": cfg["stuck_threshold"],
+                "seed": seed,
+                "max_timesteps": cfg["max_timesteps"],
+                "allocation_method": cfg["allocation_method"],
+                "initial_tasks": cfg["initial_tasks"],
+                "allocation_timeout_s": cfg["allocation_timeout_s"],
+                "wall_clock_limit_s": cfg["wall_clock_limit_s"],
+                "max_plan_time": _map_plan_time,
+                "output_dir": output_dir,
+                "label": (
+                    f"{map_name} "
+                    f"ar{cfg['task_arrival_rate']:.4f} "
+                    f"cr{cfg['comm_range']:.1f} "
+                    f"{cfg['rerun_interval'] if cfg['rerun_interval'] < 999999 else 'ri-static'} "
+                    f"seed={seed}"
+                )
+            })
+
+    # One Task:
+    print(f"\nRunning 1 task as a sanity check: {tasks[0]['label']}")
+
+    all_metrics: List[RunMetrics] = []
+
+    
 if __name__ == "__main__":
     main()
