@@ -62,3 +62,20 @@ class MetricsOrchestrator(IntegrationOrchestrator):
         self._allocation_times_ms.append(elapsed_ms)
         self._allocation_call_timesteps.append(self.current_timestep)
         self._tasks_per_allocation_call.append(pending)
+
+    def run_simulation(self, timesteps: int = 100) -> None:
+        from tqdm import tqdm
+        wall_start = time.perf_counter()
+        pbar = tqdm(range(timesteps), desc=f"Simulation ({self.allocation_method.upper()})", leave=True)
+        for _ in pbar:
+            if self._wall_time_limit_s is not None:
+                if time.perf_counter() - wall_start > self._wall_time_limit_s:
+                    self._hit_wall_clock_ceiling = True
+                    tqdm.write(
+                        f"[t={self.current_timestep}] WALL-CLOCK LIMIT "
+                        f"({self._wall_time_limit_s / 60:.0f} min) exceeded — stopping early."
+                    )
+                    break
+            self.step()
+            q = float(np.mean(list(self._induct_queue_depth.values()))) if self._induct_queue_depth else 0
+            pbar.set_postfix(done=len(self.completed_task_ids), t=self.current_timestep, q=f"{q:.2f}", refresh=False)
