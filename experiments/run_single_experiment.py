@@ -10,6 +10,7 @@ See run_single_ri_sensitivity_experiment.py for the rerun_interval sensitivity r
 import os
 import sys
 import time
+from collections import OrderedDict
 
 import numpy as np
 
@@ -77,8 +78,18 @@ class MetricsOrchestrator(IntegrationOrchestrator):
                     )
                     break
             self.step()
-            q = float(np.mean(list(self._induct_queue_depth.values()))) if self._induct_queue_depth else 0
-            pbar.set_postfix(done=len(self.completed_task_ids), t=self.current_timestep, q=f"{q:.2f}", refresh=False)
+            q        = float(np.mean(list(self._induct_queue_depth.values()))) if self._induct_queue_depth else 0
+            active   = sum(1 for a in self.agent_states if not a.is_charging and not a.is_navigating_to_charger)
+            nav_chg  = sum(1 for a in self.agent_states if a.is_navigating_to_charger)
+            charging = sum(1 for a in self.agent_states if a.is_charging)
+            pbar.set_postfix(OrderedDict([
+                ("done",   len(self.completed_task_ids)),
+                ("q",      f"{q:.2f}"),
+                ("agents", f"{active}/{self.num_agents}"),
+                ("nav",    f"{nav_chg}/{self.num_agents}"),
+                ("chg",    f"{charging}/{self.num_agents}"),
+                ("t",      self.current_timestep),
+            ]), refresh=False)
 
     def step(self, *args, **kwargs):
         # Initialise per-agent state tracking on first step

@@ -303,7 +303,10 @@ class IntegrationOrchestrator:
             events = self.step()
             done = len(self.completed_task_ids)
             q = float(np.mean(list(self._induct_queue_depth.values()))) if self._induct_queue_depth else 0
-            pbar.set_postfix(done=done, t=self.current_timestep, q=f"{q:.2f}", refresh=False)
+            active   = sum(1 for a in self.agent_states if not a.is_charging and not a.is_navigating_to_charger)
+            nav_chg  = sum(1 for a in self.agent_states if a.is_navigating_to_charger)
+            charging = sum(1 for a in self.agent_states if a.is_charging)
+            pbar.set_postfix(done=done, q=f"{q:.2f}", agents=f"{active}/{self.num_agents}", nav=f"{nav_chg}/{self.num_agents}", chg=f"{charging}/{self.num_agents}", t=self.current_timestep, refresh=False)
             # Main simulation loop logic:
             # 1. Get current task assignments from GCBBA
             # 2. Update AgentState with new assignments
