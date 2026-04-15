@@ -111,7 +111,7 @@ class MetricsOrchestrator(IntegrationOrchestrator):
         """Collect metrics for a steady-state run (throughput, wait time, queue depth)."""
         m = RunMetrics()
         m.num_tasks_completed = len(self.completed_task_ids)
-        # self._collect_common_metrics(m, **kwargs)
+        self._collect_common_metrics(m, **kwargs)
 
         # ── Throughput ────────────────────────────────────────────
         m.total_tasks_injected = self._next_task_id
@@ -147,7 +147,7 @@ class MetricsOrchestrator(IntegrationOrchestrator):
         m = RunMetrics()
         m.num_tasks_total = len(self.all_task_ids)
         m.num_tasks_completed = len(self.completed_task_ids)
-        # self._collect_common_metrics(m, **kwargs)
+        self._collect_common_metrics(m, **kwargs)
 
         # ── Batch completion ──────────────────────────────────────
         m.all_tasks_completed = self.completed_task_ids >= self.all_task_ids
@@ -162,3 +162,108 @@ class MetricsOrchestrator(IntegrationOrchestrator):
         # solution_quality_ratio left at -1.0 (Hungarian not run)
 
         return m
+    
+    def _collect_common_metrics(
+        self,
+        m: RunMetrics,
+        config_name: str,
+        allocation_method: str,
+        experiment_type: str,
+        seed: int,
+        num_agents: int,
+        task_arrival_rate: float,
+        initial_tasks: int,
+        comm_range: float,
+        rerun_interval: int,
+        stuck_threshold: int,
+        queue_max_depth: int,
+        max_timesteps: int,
+        wall_time: float,
+    ) -> None:
+        """Fills fields common to both steady-state and batch runs."""
+
+        # ── Identity ──────────────────────────────────────────────
+        m.run_id = f"{config_name}_s{seed}"
+        m.config_name = config_name
+        m.allocation_method = allocation_method
+        m.experiment_type = experiment_type
+        m.seed = seed
+        m.num_agents = num_agents
+        m.task_arrival_rate = task_arrival_rate
+        m.initial_tasks = initial_tasks
+        m.comm_range = comm_range
+        m.rerun_interval = rerun_interval
+        m.stuck_threshold = stuck_threshold
+        m.queue_max_depth = queue_max_depth
+
+        # ── Run validity ──────────────────────────────────────────
+        m.total_steps = self.current_timestep
+        m.hit_timestep_ceiling = (
+            not (self.completed_task_ids >= self.all_task_ids)
+            and self.current_timestep >= max_timesteps - 1
+        )
+        m.hit_wall_clock_ceiling = self._hit_wall_clock_ceiling
+        m.wall_time_seconds = round(wall_time, 3)
+
+        # ── Computation ───────────────────────────────────────────
+        m.num_allocation_calls = len(self._allocation_times_ms)
+        if self._allocation_times_ms:
+            m.total_allocation_time_ms = round(sum(self._allocation_times_ms), 2)
+            m.avg_allocation_time_ms = round(float(np.mean(self._allocation_times_ms)), 2)
+            m.avg_allocation_time_per_agent_ms = round(m.avg_allocation_time_ms / num_agents, 4) if num_agents else 0.0
+            m.max_allocation_time_ms = round(float(max(self._allocation_times_ms)), 2)
+            m.std_allocation_time_ms = round(float(np.std(self._allocation_times_ms)), 2)
+        if self._tasks_per_allocation_call:
+            m.avg_tasks_per_allocation_call = round(float(np.mean(self._tasks_per_allocation_call)), 2)
+
+        # ── Communication ─────────────────────────────────────────
+        m.total_consensus_rounds = self._total_consensus_rounds_all_calls
+        if self._num_allocation_calls_with_consensus > 0:
+            m.avg_consensus_rounds_per_call = round(
+                self._total_consensus_rounds_all_calls / self._num_allocation_calls_with_consensus, 2
+            )
+
+        # ── Agent utilization ─────────────────────────────────────
+        idle_ratios, tasks_per_agent = [], []
+        for s in self.agent_states:
+            hist = s.position_history
+            total = max(len(hist), 1)
+            idle = sum(1 for k in range(1, len(hist)) if hist[k - 1][:3] == hist[k][:3])
+            idle_ratios.append(idle / total)
+            tasks_per_agent.append(len(s.completed_tasks))
+        m.per_agent_tasks_completed = tasks_per_agent
+        m.avg_idle_ratio = round(float(np.mean(idle_ratios)), 4) if idle_ratios else 0.0
+        m.std_idle_ratio = round(float(np.std(idle_ratios)), 4) if idle_ratios else 0.0
+        m.task_balance_std = round(float(np.std(tasks_per_agent)), 3) if tasks_per_agent else 0.0
+
+        # ── Distance ──────────────────────────────────────────────
+        per_agent_dist = []
+        for s in self.agent_states:
+            hist = s.position_history
+            dist = sum(1 for k in range(1, len(hist)) if hist[k - 1][:3] != hist[k][:3])
+            per_agent_dist.append(float(dist))
+        m.per_agent_distances = per_agent_dist
+        m.total_distance_all_agents = round(sum(per_agent_dist), 1)
+        m.avg_distance_per_agent = round(float(np.mean(per_agent_dist)), 2) if per_agent_dist else 0.0
+        m.distance_per_task = round(m.total_distance_all_agents / max(m.num_tasks_completed, 1), 3)
+
+        # ── Energy (1 move = 1 energy unit) ───────────────────────
+        m.per_agent_energy_consumed = per_agent_dist
+        m.total_energy_consumed = round(m.total_distance_all_agents, 1)
+        m.avg_energy_consumed_per_agent = m.avg_distance_per_agent
+        total_agent_timesteps = max(num_agents * self.current_timestep, 1)
+        m.charging_time_fraction = round(self._total_charging_timesteps / total_agent_timesteps, 4)
+        m.num_charging_events = self._num_charging_events
+        m.total_charging_timesteps = self._total_charging_timesteps
+        final_energies = [s.energy for s in self.agent_states]
+        m.avg_final_energy = round(float(np.mean(final_energies)), 2)
+        m.min_final_energy = int(min(final_energies))
+
+        # ── Robustness ────────────────────────────────────────────
+        m.num_deadlocks = self._num_deadlocks
+
+        # ── Time series ───────────────────────────────────────────
+        m.tasks_completed_over_time = self._tasks_completed_over_time
+        m.allocation_call_timesteps = self._allocation_call_timesteps
+        m.allocation_call_durations_ms = [round(x, 2) for x in self._allocation_times_ms]
+        m.queue_depth_over_time = [round(x, 3) for x in self._queue_depth_snapshots]
