@@ -141,3 +141,24 @@ class MetricsOrchestrator(IntegrationOrchestrator):
             m.max_task_wait_time = round(float(max(wait_times)), 2)
 
         return m
+    
+    def collect_batch_metrics(self, **kwargs) -> RunMetrics:
+        """Collect metrics for a batch run (makespan, all_tasks_completed)."""
+        m = RunMetrics()
+        m.num_tasks_total = len(self.all_task_ids)
+        m.num_tasks_completed = len(self.completed_task_ids)
+        # self._collect_common_metrics(m, **kwargs)
+
+        # ── Batch completion ──────────────────────────────────────
+        m.all_tasks_completed = self.completed_task_ids >= self.all_task_ids
+        if m.all_tasks_completed:
+            all_completions = [
+                t.completion_time
+                for s in self.agent_states
+                for t in s.completed_tasks
+                if t.completion_time is not None
+            ]
+            m.makespan = int(max(all_completions)) if all_completions else -1
+        # solution_quality_ratio left at -1.0 (Hungarian not run)
+
+        return m
