@@ -264,7 +264,8 @@ def main():
         for seed in cfg["seeds"]:
             tasks.append({
                 "config_path": map_path,
-                "config_name": map_name,
+                "config_name": cfg["config_name"],
+                "experiment_type": cfg["experiment_type"],
                 "task_arrival_rate": cfg["task_arrival_rate"],
                 "queue_max_depth": cfg["queue_max_depth"],
                 "warmup_timesteps": cfg["warmup_timesteps"],
@@ -280,11 +281,7 @@ def main():
                 "max_plan_time": _map_plan_time,
                 "output_dir": output_dir,
                 "label": (
-                    f"{map_name} "
-                    f"ar{cfg['task_arrival_rate']:.4f} "
-                    f"cr{cfg['comm_range']:.1f} "
-                    f"{cfg['rerun_interval'] if cfg['rerun_interval'] < 999999 else 'ri-static'} "
-                    f"seed={seed}"
+                    f"{cfg['config_name']} seed={seed}"
                 )
             })
 
