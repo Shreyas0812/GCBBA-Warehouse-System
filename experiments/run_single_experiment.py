@@ -79,3 +79,30 @@ class MetricsOrchestrator(IntegrationOrchestrator):
             self.step()
             q = float(np.mean(list(self._induct_queue_depth.values()))) if self._induct_queue_depth else 0
             pbar.set_postfix(done=len(self.completed_task_ids), t=self.current_timestep, q=f"{q:.2f}", refresh=False)
+
+    def step(self, *args, **kwargs):
+        # Initialise per-agent state tracking on first step
+        if not self._prev_navigating:
+            self._prev_navigating = [s.is_navigating_to_charger for s in self.agent_states]
+            self._prev_stuck = [s.is_stuck for s in self.agent_states]
+
+        result = super().step(*args, **kwargs)
+
+        for i, s in enumerate(self.agent_states):
+            # New charging event: agent just started navigating to charger
+            if s.is_navigating_to_charger and not self._prev_navigating[i]:
+                self._num_charging_events += 1
+            self._prev_navigating[i] = s.is_navigating_to_charger
+
+            # Charging timesteps
+            if s.is_charging:
+                self._total_charging_timesteps += 1
+
+            # Deadlock: agent just became stuck
+            currently_stuck = s.detect_stuck(self.stuck_threshold)
+            if currently_stuck and not self._prev_stuck[i]:
+                self._num_deadlocks += 1
+            self._prev_stuck[i] = currently_stuck
+
+        self._tasks_completed_over_time.append(len(self.completed_task_ids))
+        return result
