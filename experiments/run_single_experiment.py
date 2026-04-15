@@ -267,3 +267,116 @@ class MetricsOrchestrator(IntegrationOrchestrator):
         m.allocation_call_timesteps = self._allocation_call_timesteps
         m.allocation_call_durations_ms = [round(x, 2) for x in self._allocation_times_ms]
         m.queue_depth_over_time = [round(x, 3) for x in self._queue_depth_snapshots]
+
+    
+# ─────────────────────────────────────────────────────────────────
+#  Single experiment runners
+# ─────────────────────────────────────────────────────────────────
+
+def run_single_steady_state_experiment(
+    config_path: str,
+    config_name: str,
+    task_arrival_rate: float,
+    queue_max_depth: int,
+    warmup_timesteps: int,
+    comm_range: float,
+    rerun_interval: int,
+    stuck_threshold: int,
+    seed: int,
+    max_timesteps: int,
+    allocation_method: str = "gcbba",
+    initial_tasks: int = 0,
+    allocation_timeout_s: Optional[float] = None,
+    wall_clock_limit_s: Optional[float] = None,
+    max_plan_time: int = 200,
+) -> RunMetrics:
+    np.random.seed(seed)
+
+    orch = MetricsOrchestrator(
+        config_path=config_path,
+        task_arrival_rate=task_arrival_rate,
+        induct_queue_capacity=queue_max_depth,
+        warmup_timesteps=warmup_timesteps,
+        initial_tasks=initial_tasks,
+        comm_range=comm_range,
+        rerun_interval=rerun_interval,
+        stuck_threshold=stuck_threshold,
+        max_plan_time=max_plan_time,
+        allocation_method=allocation_method,
+        allocation_timeout_s=allocation_timeout_s,
+        wall_clock_limit_s=wall_clock_limit_s,
+    )
+
+    t0 = time.perf_counter()
+    orch.run_simulation(timesteps=max_timesteps)
+    wall_time = time.perf_counter() - t0
+
+    return orch.collect_steady_state_metrics(
+        warmup_timesteps=warmup_timesteps,
+        config_name=config_name,
+        allocation_method=allocation_method,
+        experiment_type="steady_state",
+        seed=seed,
+        num_agents=len(orch.agent_states),
+        task_arrival_rate=task_arrival_rate,
+        initial_tasks=initial_tasks,
+        comm_range=comm_range,
+        rerun_interval=rerun_interval,
+        stuck_threshold=stuck_threshold,
+        queue_max_depth=queue_max_depth,
+        max_timesteps=max_timesteps,
+        wall_time=wall_time,
+    )
+
+
+def run_single_batch_experiment(
+    config_path: str,
+    config_name: str,
+    initial_tasks: int,
+    queue_max_depth: int,
+    comm_range: float,
+    rerun_interval: int,
+    stuck_threshold: int,
+    seed: int,
+    max_timesteps: int,
+    allocation_method: str = "gcbba",
+    allocation_timeout_s: Optional[float] = None,
+    wall_clock_limit_s: Optional[float] = None,
+    max_plan_time: int = 200,
+) -> RunMetrics:
+    np.random.seed(seed)
+
+    orch = MetricsOrchestrator(
+        config_path=config_path,
+        task_arrival_rate=0.0,
+        induct_queue_capacity=queue_max_depth,
+        warmup_timesteps=0,
+        initial_tasks=initial_tasks,
+        comm_range=comm_range,
+        rerun_interval=rerun_interval,
+        stuck_threshold=stuck_threshold,
+        max_plan_time=max_plan_time,
+        allocation_method=allocation_method,
+        allocation_timeout_s=allocation_timeout_s,
+        wall_clock_limit_s=wall_clock_limit_s,
+    )
+
+    t0 = time.perf_counter()
+    orch.run_simulation(timesteps=max_timesteps)
+    wall_time = time.perf_counter() - t0
+
+    return orch.collect_batch_metrics(
+        config_name=config_name,
+        allocation_method=allocation_method,
+        experiment_type="batch",
+        seed=seed,
+        num_agents=len(orch.agent_states),
+        task_arrival_rate=0.0,
+        initial_tasks=initial_tasks,
+        comm_range=comm_range,
+        rerun_interval=rerun_interval,
+        stuck_threshold=stuck_threshold,
+        queue_max_depth=queue_max_depth,
+        max_timesteps=max_timesteps,
+        wall_time=wall_time,
+    )
