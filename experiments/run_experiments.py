@@ -7,13 +7,17 @@ Usage:
 """
 
 import argparse
+import csv
 import json
 import os
 import sys
-from typing import List, Dict
-import yaml as yaml
+import traceback
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import asdict
 from datetime import datetime
 import itertools
+from typing import List, Dict
+import yaml as yaml
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
@@ -23,6 +27,7 @@ if PROJECT_ROOT not in sys.path:
 from helper.machine_info import collect_machine_info
 from helper.map_utils import calculate_average_service_time
 from Metrics import RunMetrics
+from run_single_experiment import run_single_steady_state_experiment, run_single_batch_experiment
 
 def get_experiment_configs(
     mode: str = 'full',
@@ -143,6 +148,115 @@ def get_experiment_configs(
             })
 
     return configs
+
+
+# ─────────────────────────────────────────────────────────────────
+#  CSV fields written to summary.csv
+# ─────────────────────────────────────────────────────────────────
+
+CSV_FIELDS = [
+    # Identity
+    "run_id", "config_name", "allocation_method", "experiment_type",
+    "seed", "num_agents", "task_arrival_rate", "initial_tasks", "comm_range", "rerun_interval",
+    # Validity
+    "total_steps", "hit_timestep_ceiling", "hit_wall_clock_ceiling",
+    # Throughput (steady-state)
+    "throughput", "throughput_per_agent", "avg_task_wait_time", "max_task_wait_time",
+    "steady_state_tasks_completed", "total_tasks_injected", "tasks_dropped_by_queue_cap", "avg_queue_depth",
+    # Batch
+    "makespan", "all_tasks_completed", "num_tasks_completed", "num_tasks_total",
+    # Computation
+    "avg_allocation_time_ms", "avg_allocation_time_per_agent_ms",
+    "num_allocation_calls", "max_allocation_time_ms", "std_allocation_time_ms",
+    # Communication
+    "avg_consensus_rounds_per_call", "total_consensus_rounds",
+    # Utilization
+    "avg_idle_ratio", "task_balance_std",
+    # Distance / Energy
+    "distance_per_task", "total_distance_all_agents",
+    "total_energy_consumed", "charging_time_fraction", "num_charging_events",
+    # Robustness
+    "num_deadlocks",
+    # Wall-clock
+    "wall_time_seconds",
+]
+
+
+# ─────────────────────────────────────────────────────────────────
+#  Helpers
+# ─────────────────────────────────────────────────────────────────
+
+def _run_task(task: Dict):
+    """Execute one (cfg, seed) experiment. Module-level for ProcessPoolExecutor pickling."""
+    if task["experiment_type"] == "steady_state":
+        metrics = run_single_steady_state_experiment(
+            config_path=task["config_path"],
+            config_name=task["config_name"],
+            task_arrival_rate=task["task_arrival_rate"],
+            queue_max_depth=task["queue_max_depth"],
+            warmup_timesteps=task["warmup_timesteps"],
+            comm_range=task["comm_range"],
+            rerun_interval=task["rerun_interval"],
+            stuck_threshold=task["stuck_threshold"],
+            seed=task["seed"],
+            max_timesteps=task["max_timesteps"],
+            allocation_method=task["allocation_method"],
+            initial_tasks=task["initial_tasks"],
+            allocation_timeout_s=task["allocation_timeout_s"],
+            wall_clock_limit_s=task["wall_clock_limit_s"],
+            max_plan_time=task["max_plan_time"],
+        )
+    else:
+        metrics = run_single_batch_experiment(
+            config_path=task["config_path"],
+            config_name=task["config_name"],
+            initial_tasks=task["initial_tasks"],
+            queue_max_depth=task["queue_max_depth"],
+            comm_range=task["comm_range"],
+            rerun_interval=task["rerun_interval"],
+            stuck_threshold=task["stuck_threshold"],
+            seed=task["seed"],
+            max_timesteps=task["max_timesteps"],
+            allocation_method=task["allocation_method"],
+            allocation_timeout_s=task["allocation_timeout_s"],
+            wall_clock_limit_s=task["wall_clock_limit_s"],
+            max_plan_time=task["max_plan_time"],
+        )
+    return metrics, task["label"]
+
+
+def _save_run_metrics(metrics: RunMetrics, output_dir: str) -> None:
+    """Save full metrics dataclass as JSON in a per-run subdirectory."""
+    run_dir = os.path.join(output_dir, metrics.run_id)
+    os.makedirs(run_dir, exist_ok=True)
+    with open(os.path.join(run_dir, "metrics.json"), "w") as f:
+        json.dump(asdict(metrics), f, indent=2, default=str)
+
+
+def _save_summary_csv(all_metrics: List[RunMetrics], output_dir: str) -> None:
+    """Write focused summary CSV."""
+    summary_path = os.path.join(output_dir, "summary.csv")
+    with open(summary_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+        writer.writeheader()
+        for m in all_metrics:
+            writer.writerow({k: getattr(m, k) for k in CSV_FIELDS})
+    print(f"\nSummary CSV: {summary_path}  ({len(all_metrics)} runs)")
+
+
+def _print_result(metrics: RunMetrics, run_num: int, total_runs: int) -> None:
+    if metrics.experiment_type == "steady_state":
+        print(
+            f"  [DONE {run_num}/{total_runs}] {metrics.allocation_method} "
+            f"ar={metrics.task_arrival_rate:.4f} cr={metrics.comm_range:.1f} "
+            f"→ throughput={metrics.throughput:.4f} wait={metrics.avg_task_wait_time:.1f}ts"
+        )
+    else:
+        print(
+            f"  [DONE {run_num}/{total_runs}] {metrics.allocation_method} "
+            f"tc={metrics.initial_tasks} cr={metrics.comm_range:.1f} "
+            f"→ makespan={metrics.makespan} completed={metrics.all_tasks_completed}"
+        )
 
 
 def main():
@@ -285,11 +399,39 @@ def main():
                 )
             })
 
-    # One Task:
-    print(f"\nRunning 1 task as a sanity check: {tasks[0]['label']}")
-
     all_metrics: List[RunMetrics] = []
 
-    
+    if num_workers == 1:
+        print("Running experiments sequentially...")
+        for run_num, task in enumerate(tasks, 1):
+            print(f"\n[RUN {run_num}/{total_runs}] {task['label']}")
+            try:
+                metrics, _ = _run_task(task)
+                all_metrics.append(metrics)
+                _save_run_metrics(metrics, output_dir)
+                _print_result(metrics, run_num, total_runs)
+            except Exception as e:
+                print(f"ERROR in run {task['label']}: {e}")
+                traceback.print_exc()
+    else:
+        completed = 0
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            future_to_task = {executor.submit(_run_task, task): task for task in tasks}
+            for future in as_completed(future_to_task):
+                task = future_to_task[future]
+                completed += 1
+                try:
+                    metrics, _ = future.result()
+                    all_metrics.append(metrics)
+                    _save_run_metrics(metrics, output_dir)
+                    _print_result(metrics, completed, total_runs)
+                except Exception as e:
+                    print(f"ERROR in run {task['label']}: {e}")
+                    traceback.print_exc()
+
+    if all_metrics:
+        _save_summary_csv(all_metrics, output_dir)
+
+
 if __name__ == "__main__":
     main()
