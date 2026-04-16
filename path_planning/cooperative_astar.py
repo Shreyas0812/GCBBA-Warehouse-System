@@ -2,9 +2,12 @@ import heapq
 import os
 import sys
 
+from tqdm import tqdm
+
+from path_planning.base import PathPlanner
 from path_planning.grid_map import GridMap
 
-class CooperativeAStar:
+class CooperativeAStar(PathPlanner):
     """
     CooperativeAStar for collision-free MAPF
     """
@@ -208,6 +211,62 @@ class CooperativeAStar:
 
         return agent_paths
     
+
+    # ------------------------------------------------------------------
+    # PathPlanner interface
+    # ------------------------------------------------------------------
+
+    def hold_position(self, position: tuple, agent_id: int, current_timestep: int) -> None:
+        """Reserve an agent's current position without planning a new path."""
+        self.clear_agent_reservations(agent_id)
+        self.reserve_path([position], agent_id, start_time=current_timestep)
+
+    def plan_all(self, agent_states: list, current_timestep: int, max_plan_time: int) -> dict:
+        """Plan paths for all agents sequentially, updating the reservation table
+        between each agent so later agents route around earlier ones.
+
+        Args:
+            agent_states: agents with a valid goal (idle/energy checks already
+                          handled by the orchestrator before this call).
+            current_timestep: current simulation timestep.
+            max_plan_time: search horizon in timesteps.
+
+        Returns:
+            dict {agent_id: path}.  Falls back to [start] if CA* finds no path.
+        """
+        result = {}
+        max_time = current_timestep + max_plan_time
+
+        for agent_state in agent_states:
+            self.clear_agent_reservations(agent_state.agent_id)
+            start = agent_state.get_position()
+            goal  = agent_state.get_current_goal()
+
+            # Charging navigation uses BFS gradient descent (O(1) per step, no
+            # reservation conflicts needed — charger paths are short and private).
+            if agent_state.is_navigating_to_charger:
+                path = self.grid_map.reconstruct_path_to_station(start, goal)
+            else:
+                path = self.plan_path_with_reservations(
+                    start=start,
+                    goal=goal,
+                    agent_id=agent_state.agent_id,
+                    max_time=max_time,
+                    start_time=current_timestep,
+                )
+
+            if path is None:
+                tqdm.write(
+                    f"[t={current_timestep}] Agent {agent_state.agent_id}: "
+                    f"CA* found no path to {goal} within {max_plan_time} steps — staying in place"
+                )
+                path = [start]
+
+            self.reserve_path(path, agent_state.agent_id, start_time=current_timestep)
+            result[agent_state.agent_id] = path
+
+        return result
+
 
 if __name__ == "__main__":
     PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
