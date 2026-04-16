@@ -706,6 +706,7 @@ class IntegrationOrchestrator:
         paths = self.path_planner.plan_all(planning_agents, self.current_timestep, self.max_plan_time)
         for agent_state in planning_agents:
             agent_state.assign_path(paths[agent_state.agent_id])
+            
     def save_trajectories(self, path: str = "results/data/trajectories.csv") -> None:
         """Export all agent position histories to a CSV file."""
         os.makedirs(os.path.dirname(path), exist_ok=True)
