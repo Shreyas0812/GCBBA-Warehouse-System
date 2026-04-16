@@ -37,6 +37,8 @@ def get_experiment_configs(
     grid_w: int = 30,
     grid_h: int = 30,
     map_path: str = None,
+    path_planner: str = "ca_star",
+    rhcr_replanning_period: int = None,
 ) -> List[Dict]:
     """
     Builds list of experiment configurations to run based on the selected mode and map parameters. 
@@ -126,6 +128,8 @@ def get_experiment_configs(
                 "allocation_timeout_s": ALLOCATION_TIMEOUT_S,
                 "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,
                 "seeds": seeds,
+                "path_planner": path_planner,
+                "rhcr_replanning_period": rhcr_replanning_period,
             })
 
     if config in ("all", "batch_only"):
@@ -145,6 +149,8 @@ def get_experiment_configs(
                 "allocation_timeout_s": ALLOCATION_TIMEOUT_S,
                 "wall_clock_limit_s": WALL_CLOCK_LIMIT_S,
                 "seeds": seeds,
+                "path_planner": path_planner,
+                "rhcr_replanning_period": rhcr_replanning_period,
             })
 
     return configs
@@ -156,7 +162,7 @@ def get_experiment_configs(
 
 CSV_FIELDS = [
     # Identity
-    "run_id", "config_name", "allocation_method", "experiment_type",
+    "run_id", "config_name", "allocation_method", "path_planner", "experiment_type",
     "seed", "num_agents", "task_arrival_rate", "initial_tasks", "comm_range", "rerun_interval",
     # Validity
     "total_steps", "hit_timestep_ceiling", "hit_wall_clock_ceiling",
@@ -205,6 +211,8 @@ def _run_task(task: Dict):
             allocation_timeout_s=task["allocation_timeout_s"],
             wall_clock_limit_s=task["wall_clock_limit_s"],
             max_plan_time=task["max_plan_time"],
+            path_planner=task["path_planner"],
+            rhcr_replanning_period=task["rhcr_replanning_period"],
             output_dir=task["output_dir"],
         )
     else:
@@ -222,6 +230,8 @@ def _run_task(task: Dict):
             allocation_timeout_s=task["allocation_timeout_s"],
             wall_clock_limit_s=task["wall_clock_limit_s"],
             max_plan_time=task["max_plan_time"],
+            path_planner=task["path_planner"],
+            rhcr_replanning_period=task["rhcr_replanning_period"],
             output_dir=task["output_dir"],
         )
     return metrics, task["label"]
@@ -315,6 +325,22 @@ def main():
         help="Number of parallel workers (default: 0 = use all CPU cores)",
     )
 
+    parser.add_argument(
+        "--path-planner",
+        dest="path_planner",
+        choices=["ca_star", "rhcr"],
+        default="ca_star",
+        help="Path planning algorithm (default: ca_star)",
+    )
+
+    parser.add_argument(
+        "--rhcr-replanning-period",
+        dest="rhcr_replanning_period",
+        type=int,
+        default=None,
+        help="RHCR replanning period h (default: window_size)",
+    )
+
     args = parser.parse_args()
 
     map_name = args.map.replace(".yaml", "")
@@ -345,6 +371,8 @@ def main():
         grid_w=_grid_w,
         grid_h=_grid_h,
         map_path=map_path,
+        path_planner=args.path_planner,
+        rhcr_replanning_period=args.rhcr_replanning_period,
         )
 
     num_workers = args.workers if args.workers > 0 else os.cpu_count()
@@ -395,6 +423,8 @@ def main():
                 "allocation_timeout_s": cfg["allocation_timeout_s"],
                 "wall_clock_limit_s": cfg["wall_clock_limit_s"],
                 "max_plan_time": _map_plan_time,
+                "path_planner": cfg["path_planner"],
+                "rhcr_replanning_period": cfg["rhcr_replanning_period"],
                 "output_dir": output_dir,
                 "label": (
                     f"{cfg['config_name']} seed={seed}"

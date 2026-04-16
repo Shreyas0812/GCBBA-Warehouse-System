@@ -300,6 +300,8 @@ def run_single_steady_state_experiment(
     allocation_timeout_s: Optional[float] = None,
     wall_clock_limit_s: Optional[float] = None,
     max_plan_time: int = 200,
+    path_planner: str = "ca_star",
+    rhcr_replanning_period: int = None,
     output_dir: Optional[str] = None,
 ) -> RunMetrics:
     np.random.seed(seed)
@@ -317,6 +319,8 @@ def run_single_steady_state_experiment(
         allocation_method=allocation_method,
         allocation_timeout_s=allocation_timeout_s,
         wall_clock_limit_s=wall_clock_limit_s,
+        path_planner=path_planner,
+        rhcr_replanning_period=rhcr_replanning_period,
     )
 
     t0 = time.perf_counter()
@@ -362,6 +366,8 @@ def run_single_batch_experiment(
     allocation_timeout_s: Optional[float] = None,
     wall_clock_limit_s: Optional[float] = None,
     max_plan_time: int = 200,
+    path_planner: str = "ca_star",
+    rhcr_replanning_period: int = None,
     output_dir: Optional[str] = None,
 ) -> RunMetrics:
     np.random.seed(seed)
@@ -379,6 +385,8 @@ def run_single_batch_experiment(
         allocation_method=allocation_method,
         allocation_timeout_s=allocation_timeout_s,
         wall_clock_limit_s=wall_clock_limit_s,
+        path_planner=path_planner,
+        rhcr_replanning_period=rhcr_replanning_period,
     )
 
     t0 = time.perf_counter()
