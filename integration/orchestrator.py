@@ -10,6 +10,7 @@ Path Planner: Priority-based Time-Expanded A* with reservation table for collisi
 
 import os
 import csv
+import random
 from typing import Optional, Set, Tuple, List, Dict
 import yaml
 import networkx as nx
@@ -612,7 +613,8 @@ class IntegrationOrchestrator:
         return assignments_dict
 
     def _plan_paths(self) -> None:
-        replan_agents = [agent_state for agent_state in self.agent_states if agent_state.needs_new_path] # Set in gcbba
+        replan_agents = [agent_state for agent_state in self.agent_states if agent_state.needs_new_path]
+        random.shuffle(replan_agents)  # Randomise order to avoid systematic priority bias
 
         if not replan_agents:
             return
