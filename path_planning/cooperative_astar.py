@@ -106,7 +106,7 @@ class CooperativeAStar(PathPlanner):
             #     key = (*goal_pos, future_t)
             #     self.reservations[key] = agent_id
     
-    def plan_path_with_reservations(self, start, goal, agent_id, max_time=1000, start_time=0):
+    def plan_path_with_reservations(self, start, goal, agent_id, max_time=1000, start_time=0, require_goal=True):
         """
         Path plan with A* search considering time-based reservations.
 
@@ -115,19 +115,25 @@ class CooperativeAStar(PathPlanner):
         :param agent_id: ID of the agent
         :param max_time: Maximum time steps to search
         :param start_time: Starting time step for planning
+        :param require_goal: If True (default), return None when goal unreachable within max_time.
+                             If False (RHCR only), return path to closest node reached within window —
+                             agent makes progress and replans when window expires.
         :return: List of positions [(x1, y1, z1), (x2, y2, z2), ...] or None if no path found
         """
 
         if start == goal:
             return [start]
-        
+
         if not self.grid_map.is_valid_cell(*start) or not self.grid_map.is_valid_cell(*goal):
             return None
-        
+
         # Priority queue for A* search: (f_score, counter, (position, time_step), path)
         counter = 0
         open_set = [(0, counter, (start, start_time), [start])]
         closed_set = set()
+
+        best_partial_path = None
+        best_partial_h    = float('inf')
 
         while open_set:
             f_score, _, (current_pos, current_time), path = heapq.heappop(open_set)
@@ -137,11 +143,17 @@ class CooperativeAStar(PathPlanner):
 
             if current_pos == goal:
                 return path
-            
+
             if current_time >= max_time:
                 continue
 
             closed_set.add((current_pos, current_time))
+
+            if not require_goal:
+                h = self.heuristic(current_pos, goal)
+                if h < best_partial_h:
+                    best_partial_h    = h
+                    best_partial_path = path
 
             # Wait in place option
             next_time = current_time + 1
@@ -156,7 +168,6 @@ class CooperativeAStar(PathPlanner):
 
             # Move to neighbors
             for neighbor in self.grid_map.get_neighbors(*current_pos):
-                
 
                 if ((neighbor, next_time) in closed_set) or (self.is_reserved(*neighbor, next_time, agent_id)) or (self.has_edge_conflict(current_pos, neighbor, next_time, agent_id)):
                     continue
@@ -169,7 +180,7 @@ class CooperativeAStar(PathPlanner):
 
                 heapq.heappush(open_set, (f_score, counter, (neighbor, next_time), path_new))
 
-        return None
+        return best_partial_path if not require_goal else None
     
     def plan_all_agents(self, agents, goals, priorities=None):
         """

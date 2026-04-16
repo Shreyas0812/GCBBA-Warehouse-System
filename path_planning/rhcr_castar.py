@@ -57,6 +57,7 @@ class RHCRCAStar(PathPlanner):
             path  = self._ca.plan_path_with_reservations(
                 start=start, goal=goal, agent_id=agent_state.agent_id,
                 max_time=max_time, start_time=current_timestep,
+                require_goal=False,
             )
             if path is None:
                 tqdm.write(f"[t={current_timestep}] Agent {agent_state.agent_id}: "
@@ -81,6 +82,7 @@ class RHCRCAStar(PathPlanner):
             path  = self._ca.plan_path_with_reservations(
                 start=start, goal=goal, agent_id=agent_state.agent_id,
                 max_time=max_time, start_time=current_timestep,
+                require_goal=False,
             )
             if path is None:
                 tqdm.write(f"[t={current_timestep}] Agent {agent_state.agent_id}: "

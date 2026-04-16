@@ -65,7 +65,7 @@ class IntegrationOrchestrator:
                  max_plan_time: int = 400,
                  Lt: Optional[int] = None,
                  allocation_method: str = "gcbba",  # "gcbba", "sga", "cbba" or "dmchba"
-                 path_planner: str = "rhcr",          # "ca_star" or "rhcr"
+                 path_planner: str = "ca_star",          # "ca_star" or "rhcr"
                  rhcr_replanning_period: int = None,    # h parameter; defaults to window_size (h=w)
                  ) -> None:
 
