@@ -2,7 +2,7 @@ import heapq
 import os
 import sys
 
-from collision_avoidance.grid_map import GridMap
+from path_planning.grid_map import GridMap
 
 class CooperativeAStar:
     """

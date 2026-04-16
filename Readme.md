@@ -62,7 +62,7 @@ GCBBA_Warehouse_System/
 │   ├── GCBBA_warehouse.py          # Warehouse-specific GCBBA configuration
 │   └── tools_warehouse.py          # Utilities: communication graph construction, agent/task init
 │
-├── collision_avoidance/            # Multi-agent path planning
+├── path_planning/            # Multi-agent path planning
 │   ├── grid_map.py                 # YAML config → 3D occupancy grid with BFS distance precomputation
 │   └── cooperative_astar.py        # Cooperative A* — time-expanded A* with reservation tables
 │

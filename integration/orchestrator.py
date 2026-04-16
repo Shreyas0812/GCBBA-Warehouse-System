@@ -19,8 +19,8 @@ import time
 from tqdm import tqdm
 from dataclasses import dataclass
 
-from collision_avoidance.grid_map import GridMap
-from collision_avoidance.cooperative_astar import CooperativeAStar
+from path_planning.grid_map import GridMap
+from path_planning.cooperative_astar import CooperativeAStar
 
 from gcbba.GCBBA_Orchestrator import GCBBA_Orchestrator
 from baselines.SGA_Orchestrator import SGA_Orchestrator
