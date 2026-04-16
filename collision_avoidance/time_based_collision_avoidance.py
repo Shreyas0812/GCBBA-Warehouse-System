@@ -1,7 +1,6 @@
 import heapq
 import os
 import sys
-from collections import defaultdict
 
 from collision_avoidance.grid_map import GridMap
 
@@ -34,12 +33,15 @@ class TimeBasedCollisionAvoidance:
     
     def heuristic(self, pos1, pos2):
         """
-        Computes the Manhattan distance heuristic between two positions.
-        
-        :param pos1: (x1, y1, z1)
-        :param pos2: (x2, y2, z2)
-        :return: Manhattan distance
+        BFS obstacle-aware distance from pos1 to pos2.
+        Falls back to Manhattan distance if BFS table not available.
         """
+        table = self.grid_map.bfs_distances_from_station.get(pos2)
+        if table is not None and pos1 in table:
+            return table[pos1]
+        table = self.grid_map.bfs_distances_from_station.get(pos1)
+        if table is not None and pos2 in table:
+            return table[pos2]
         return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1]) + abs(pos1[2] - pos2[2])
     
     def is_reserved(self, x, y, z, t, agent_id):
