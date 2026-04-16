@@ -300,6 +300,7 @@ def run_single_steady_state_experiment(
     allocation_timeout_s: Optional[float] = None,
     wall_clock_limit_s: Optional[float] = None,
     max_plan_time: int = 200,
+    output_dir: Optional[str] = None,
 ) -> RunMetrics:
     np.random.seed(seed)
 
@@ -322,7 +323,7 @@ def run_single_steady_state_experiment(
     orch.run_simulation(timesteps=max_timesteps)
     wall_time = time.perf_counter() - t0
 
-    return orch.collect_steady_state_metrics(
+    metrics = orch.collect_steady_state_metrics(
         warmup_timesteps=warmup_timesteps,
         config_name=config_name,
         allocation_method=allocation_method,
@@ -339,6 +340,13 @@ def run_single_steady_state_experiment(
         wall_time=wall_time,
     )
 
+    if output_dir is not None:
+        run_dir = os.path.join(output_dir, metrics.run_id)
+        os.makedirs(run_dir, exist_ok=True)
+        orch.save_trajectories(os.path.join(run_dir, "trajectories.csv"))
+
+    return metrics
+
 
 def run_single_batch_experiment(
     config_path: str,
@@ -354,6 +362,7 @@ def run_single_batch_experiment(
     allocation_timeout_s: Optional[float] = None,
     wall_clock_limit_s: Optional[float] = None,
     max_plan_time: int = 200,
+    output_dir: Optional[str] = None,
 ) -> RunMetrics:
     np.random.seed(seed)
 
@@ -376,7 +385,7 @@ def run_single_batch_experiment(
     orch.run_simulation(timesteps=max_timesteps)
     wall_time = time.perf_counter() - t0
 
-    return orch.collect_batch_metrics(
+    metrics = orch.collect_batch_metrics(
         config_name=config_name,
         allocation_method=allocation_method,
         experiment_type="batch",
@@ -391,3 +400,10 @@ def run_single_batch_experiment(
         max_timesteps=max_timesteps,
         wall_time=wall_time,
     )
+
+    if output_dir is not None:
+        run_dir = os.path.join(output_dir, metrics.run_id)
+        os.makedirs(run_dir, exist_ok=True)
+        orch.save_trajectories(os.path.join(run_dir, "trajectories.csv"))
+
+    return metrics

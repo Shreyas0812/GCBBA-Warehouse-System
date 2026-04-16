@@ -205,6 +205,7 @@ def _run_task(task: Dict):
             allocation_timeout_s=task["allocation_timeout_s"],
             wall_clock_limit_s=task["wall_clock_limit_s"],
             max_plan_time=task["max_plan_time"],
+            output_dir=task["output_dir"],
         )
     else:
         metrics = run_single_batch_experiment(
@@ -221,6 +222,7 @@ def _run_task(task: Dict):
             allocation_timeout_s=task["allocation_timeout_s"],
             wall_clock_limit_s=task["wall_clock_limit_s"],
             max_plan_time=task["max_plan_time"],
+            output_dir=task["output_dir"],
         )
     return metrics, task["label"]
 
