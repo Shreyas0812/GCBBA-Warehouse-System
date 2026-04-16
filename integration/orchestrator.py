@@ -707,6 +707,10 @@ class IntegrationOrchestrator:
                     start_time=self.current_timestep
                 )
             if path is None:
+                tqdm.write(
+                    f"[t={self.current_timestep}] Agent {agent_state.agent_id}: "
+                    f"CA* found no path to {goal} within {self.max_plan_time} steps — staying in place"
+                )
                 path = [start]  # No path found, stay in place
             self.ca.reserve_path(path, agent_state.agent_id, start_time=self.current_timestep)
 
