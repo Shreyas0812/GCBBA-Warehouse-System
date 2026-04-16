@@ -84,24 +84,27 @@ class TimeBasedCollisionAvoidance:
             return True
         return False
     
-    def reserve_path(self, path, agent_id, start_time=0):
+    def reserve_path(self, path, agent_id, start_time=0, set_goal_reservation=True):
         """
         Reserves the path for the agent.
-        
+
         :param path: List of positions [(x1, y1, z1), (x2, y2, z2), ...]
         :param agent_id: ID of the agent
+        :param set_goal_reservation: If False, skip goal_reservations (use for intermediate windows)
         """
         for t, pos in enumerate(path):
             key = (*pos, t + start_time)
             self.reservations[key] = agent_id
 
-        # Reserve goal position for all future timesteps 
-        if path:
+        if path and set_goal_reservation:
             goal_pos = path[-1]
             self.goal_reservations[goal_pos] = (agent_id, start_time + len(path))
-            # for future_t in range(len(path) + start_time, len(path) + start_time + 1000): # Arbitrary large number to reserve goal
-            #     key = (*goal_pos, future_t)
-            #     self.reservations[key] = agent_id
+
+    def prune_stale_reservations(self, current_timestep: int) -> None:
+        """Remove time-stamped reservations from before current_timestep."""
+        stale = [k for k in self.reservations if k[3] < current_timestep]
+        for k in stale:
+            del self.reservations[k]
     
     def plan_path_with_reservations(self, start, goal, agent_id, max_time=1000, start_time=0):
         """

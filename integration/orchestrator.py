@@ -10,6 +10,7 @@ Path Planner: Priority-based Time-Expanded A* with reservation table for collisi
 
 import os
 import csv
+import random
 from typing import Optional, Set, Tuple, List, Dict
 import yaml
 import networkx as nx
@@ -61,6 +62,7 @@ class IntegrationOrchestrator:
                  stuck_threshold: int = 15,
                  prediction_horizon: int = 5,
                  max_plan_time: int = 400,
+                 path_window: int = 0,
                  Lt: Optional[int] = None,
                  allocation_method: str = "gcbba",  # "gcbba", "sga", "cbba" or "dmchba"
                  ) -> None:
@@ -80,6 +82,7 @@ class IntegrationOrchestrator:
         self.stuck_threshold = stuck_threshold
         self.prediction_horizon = prediction_horizon
         self.max_plan_time = max_plan_time
+        self.path_window = path_window
         self.Lt = Lt
 
         self.grid_map = GridMap(config_path)
@@ -612,10 +615,13 @@ class IntegrationOrchestrator:
         return assignments_dict
 
     def _plan_paths(self) -> None:
-        replan_agents = [agent_state for agent_state in self.agent_states if agent_state.needs_new_path] # Set in gcbba
+        replan_agents = [agent_state for agent_state in self.agent_states if agent_state.needs_new_path]
+        random.shuffle(replan_agents)  # Randomise order to avoid systematic priority bias
 
         if not replan_agents:
             return
+
+        self.ca.prune_stale_reservations(self.current_timestep)
 
         for agent_state in replan_agents:
             self.ca.clear_agent_reservations(agent_state.agent_id)
@@ -623,7 +629,9 @@ class IntegrationOrchestrator:
 
             if goal is None:
                 start = agent_state.get_position()
-                self.ca.reserve_path([start], agent_state.agent_id, start_time=self.current_timestep)
+                self.ca.reserve_path([start], agent_state.agent_id,
+                                     start_time=self.current_timestep,
+                                     set_goal_reservation=False)
                 agent_state.needs_new_path = False
                 continue
 
@@ -693,7 +701,6 @@ class IntegrationOrchestrator:
 
             # CA*: time-expanded A* with space-time reservations.
             # For charging navigation use BFS gradient descent (O(1) per step).
-            self.ca.clear_agent_reservations(agent_state.agent_id)
             if agent_state.is_navigating_to_charger:
                 path = self.grid_map.reconstruct_path_to_station(start, goal)
             else:
@@ -704,10 +711,30 @@ class IntegrationOrchestrator:
                     max_time=self.current_timestep + self.max_plan_time,
                     start_time=self.current_timestep
                 )
+            # Track fallback before overwriting path — fallback stay-in-place must never set
+            # a goal_reservation (agent is stuck, not at its true goal).
+            is_fallback = path is None
             if path is None:
+                tqdm.write(
+                    f"[t={self.current_timestep}] Agent {agent_state.agent_id}: "
+                    f"CA* found no path to {goal} within {self.max_plan_time} steps — staying in place"
+                )
                 path = [start]  # No path found, stay in place
-            self.ca.reserve_path(path, agent_state.agent_id, start_time=self.current_timestep)
 
+            # Truncate to execution window; only set goal_reservation if path reaches the true goal.
+            # path_window=0 means no windowing (full path).
+            # Never window charger nav paths — step() transitions to is_charging on path end
+            # regardless of actual position, so a truncated charger path would start charging mid-warehouse.
+            is_charger_nav = agent_state.is_navigating_to_charger
+            is_final_goal = (not is_fallback) and (
+                is_charger_nav or (self.path_window == 0) or (len(path) <= self.path_window + 1)
+            )
+            if not is_charger_nav and self.path_window > 0 and len(path) > self.path_window + 1:
+                path = path[:self.path_window + 1]
+
+            self.ca.reserve_path(path, agent_state.agent_id,
+                                 start_time=self.current_timestep,
+                                 set_goal_reservation=is_final_goal)
             agent_state.assign_path(path)
 
     def save_trajectories(self, path: str = "results/data/trajectories.csv") -> None:
