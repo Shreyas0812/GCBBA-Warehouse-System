@@ -300,7 +300,7 @@ def run_single_steady_state_experiment(
     allocation_timeout_s: Optional[float] = None,
     wall_clock_limit_s: Optional[float] = None,
     max_plan_time: int = 200,
-    path_window: int = 20,
+    path_window: int = 0,
     output_dir: Optional[str] = None,
 ) -> RunMetrics:
     np.random.seed(seed)
@@ -364,7 +364,7 @@ def run_single_batch_experiment(
     allocation_timeout_s: Optional[float] = None,
     wall_clock_limit_s: Optional[float] = None,
     max_plan_time: int = 200,
-    path_window: int = 20,
+    path_window: int = 0,
     output_dir: Optional[str] = None,
 ) -> RunMetrics:
     np.random.seed(seed)
