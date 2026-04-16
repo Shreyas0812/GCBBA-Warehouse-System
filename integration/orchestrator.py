@@ -10,6 +10,7 @@ Path Planner: Priority-based Time-Expanded A* with reservation table for collisi
 
 import os
 import csv
+import random
 from typing import Optional, Set, Tuple, List, Dict
 import yaml
 import networkx as nx
@@ -18,8 +19,8 @@ import time
 from tqdm import tqdm
 from dataclasses import dataclass
 
-from collision_avoidance.grid_map import GridMap
-from collision_avoidance.time_based_collision_avoidance import TimeBasedCollisionAvoidance
+from path_planning.grid_map import GridMap
+from path_planning.cooperative_astar import CooperativeAStar
 
 from gcbba.GCBBA_Orchestrator import GCBBA_Orchestrator
 from baselines.SGA_Orchestrator import SGA_Orchestrator
@@ -83,7 +84,7 @@ class IntegrationOrchestrator:
         self.Lt = Lt
 
         self.grid_map = GridMap(config_path)
-        self.ca = TimeBasedCollisionAvoidance(self.grid_map)
+        self.path_planner = CooperativeAStar(self.grid_map)
 
         agent_positions, self.induct_positions, self.eject_positions, charging_positions, energy_config = self._load_config(config_path)
         self.max_energy                  = energy_config['max_energy']
@@ -612,27 +613,34 @@ class IntegrationOrchestrator:
         return assignments_dict
 
     def _plan_paths(self) -> None:
-        replan_agents = [agent_state for agent_state in self.agent_states if agent_state.needs_new_path] # Set in gcbba
+        replan_agents = [agent_state for agent_state in self.agent_states if agent_state.needs_new_path]
+        random.shuffle(replan_agents)  # Randomise order to avoid systematic priority bias
 
         if not replan_agents:
             return
 
+        # Pre-planning pass (orchestration) ---------------------------------
+        # Handle idle agents and apply energy-safety gates that may redirect
+        # agents to a charger.  These depend on orchestrator state and must
+        # run before path_planner.plan_all() is called.
+        planning_agents = []
         for agent_state in replan_agents:
-            self.ca.clear_agent_reservations(agent_state.agent_id)
             goal = agent_state.get_current_goal()
 
             if goal is None:
-                start = agent_state.get_position()
-                self.ca.reserve_path([start], agent_state.agent_id, start_time=self.current_timestep)
+                # Idle agent: hold current position so others plan around it.
+                self.path_planner.hold_position(
+                    agent_state.get_position(), agent_state.agent_id, self.current_timestep
+                )
                 agent_state.needs_new_path = False
                 continue
 
             start = agent_state.get_position()
 
-            # At the eject→induct transition (first path plan for a new to_induct leg),
+            # At the eject->induct transition (first path plan for a new to_induct leg),
             # verify the agent has enough energy for the full cycle: induct leg + eject leg
-            # + reach charger. No buffer — this is a hard floor. The to_eject gate below
-            # provides the conservative (1.3×) safety net for congestion-induced overruns.
+            # + reach charger. No buffer -- this is a hard floor. The to_eject gate below
+            # provides the conservative (1.3x) safety net for congestion-induced overruns.
             if (agent_state.task_phase == "to_induct"
                     and agent_state.current_task is not None
                     and agent_state.current_path is None):
@@ -648,7 +656,7 @@ class IntegrationOrchestrator:
                         aborted_task_id = agent_state.current_task.task_id
                         tqdm.write(
                             f"[t={self.current_timestep}] Agent {agent_state.agent_id}: energy "
-                            f"({agent_state.energy}) too low for full cycle — induct ({dist_to_induct}) "
+                            f"({agent_state.energy}) too low for full cycle -- induct ({dist_to_induct}) "
                             f"+ eject ({dist_induct_to_eject}) + charger ({charger_dist}) = {energy_needed}. "
                             f"Dropping task {aborted_task_id} before starting induct leg."
                         )
@@ -657,11 +665,10 @@ class IntegrationOrchestrator:
                         induct_idx = self._task_to_induct.get(aborted_task_id)
                         if induct_idx is not None:
                             self._induct_queue_depth[induct_idx] += 1
-                        goal = agent_state.get_current_goal()
 
-            # At the induct→eject transition, verify the agent can complete the eject
-            # leg AND reach a charger afterward.  Runs unconditionally — even for
-            # single-task agents (planned_tasks == []) — because the to_eject skip in
+            # At the induct->eject transition, verify the agent can complete the eject
+            # leg AND reach a charger afterward.  Runs unconditionally -- even for
+            # single-task agents (planned_tasks == []) -- because the to_eject skip in
             # _check_and_start_charging relies on this gate having already run.
             if (agent_state.task_phase == "to_eject"
                     and agent_state.current_task is not None):
@@ -689,27 +696,17 @@ class IntegrationOrchestrator:
                         induct_idx = self._task_to_induct.get(aborted_task_id)
                         if induct_idx is not None:
                             self._induct_queue_depth[induct_idx] += 1
-                        goal = agent_state.get_current_goal()  # Refresh — now points to charging station
 
-            # CA*: time-expanded A* with space-time reservations.
-            # For charging navigation use BFS gradient descent (O(1) per step).
-            self.ca.clear_agent_reservations(agent_state.agent_id)
-            if agent_state.is_navigating_to_charger:
-                path = self.grid_map.reconstruct_path_to_station(start, goal)
-            else:
-                path = self.ca.plan_path_with_reservations(
-                    start=start,
-                    goal=goal,
-                    agent_id=agent_state.agent_id,
-                    max_time=self.current_timestep + self.max_plan_time,
-                    start_time=self.current_timestep
-                )
-            if path is None:
-                path = [start]  # No path found, stay in place
-            self.ca.reserve_path(path, agent_state.agent_id, start_time=self.current_timestep)
+            planning_agents.append(agent_state)
 
-            agent_state.assign_path(path)
+        # Path planning ------------------------------------------------------
+        if not planning_agents:
+            return
 
+        paths = self.path_planner.plan_all(planning_agents, self.current_timestep, self.max_plan_time)
+        for agent_state in planning_agents:
+            agent_state.assign_path(paths[agent_state.agent_id])
+            
     def save_trajectories(self, path: str = "results/data/trajectories.csv") -> None:
         """Export all agent position histories to a CSV file."""
         os.makedirs(os.path.dirname(path), exist_ok=True)
