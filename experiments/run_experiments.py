@@ -107,7 +107,7 @@ def get_experiment_configs(
         max(num_agents, round(f * _batch_capacity)) for f in batch_fracs
     ))
 
-    METHODS = ["gcbba", "cbba", "sga"]
+    METHODS = ["gcbba", "cbba", "sga", "dmchba"]
 
     if config in ("all", "ss_only"):
         for method, ar, cr in itertools.product(METHODS, ss_arrival_rates, comm_ranges):
