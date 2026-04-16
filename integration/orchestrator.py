@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 from path_planning.grid_map import GridMap
 from path_planning.cooperative_astar import CooperativeAStar
+from path_planning.rhcr_castar import RHCRCAStar
 
 from gcbba.GCBBA_Orchestrator import GCBBA_Orchestrator
 from baselines.SGA_Orchestrator import SGA_Orchestrator
@@ -64,6 +65,8 @@ class IntegrationOrchestrator:
                  max_plan_time: int = 400,
                  Lt: Optional[int] = None,
                  allocation_method: str = "gcbba",  # "gcbba", "sga", "cbba" or "dmchba"
+                 path_planner: str = "rhcr",          # "ca_star" or "rhcr"
+                 rhcr_replanning_period: int = None,    # h parameter; defaults to window_size (h=w)
                  ) -> None:
 
         if allocation_method not in {"gcbba", "sga", "cbba", "dmchba"}:
@@ -84,7 +87,13 @@ class IntegrationOrchestrator:
         self.Lt = Lt
 
         self.grid_map = GridMap(config_path)
-        self.path_planner = CooperativeAStar(self.grid_map)
+        _planners = {"ca_star": CooperativeAStar, "rhcr": RHCRCAStar}
+        if path_planner not in _planners:
+            raise ValueError(f"Invalid path_planner: {path_planner!r}. Must be one of {list(_planners)}")
+        if path_planner == "rhcr":
+            self.path_planner = RHCRCAStar(self.grid_map, replanning_period=rhcr_replanning_period)
+        else:
+            self.path_planner = _planners[path_planner](self.grid_map)
 
         agent_positions, self.induct_positions, self.eject_positions, charging_positions, energy_config = self._load_config(config_path)
         self.max_energy                  = energy_config['max_energy']
