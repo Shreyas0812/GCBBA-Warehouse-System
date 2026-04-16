@@ -19,7 +19,7 @@ from tqdm import tqdm
 from dataclasses import dataclass
 
 from collision_avoidance.grid_map import GridMap
-from collision_avoidance.time_based_collision_avoidance import TimeBasedCollisionAvoidance
+from collision_avoidance.cooperative_astar import CooperativeAStar
 
 from gcbba.GCBBA_Orchestrator import GCBBA_Orchestrator
 from baselines.SGA_Orchestrator import SGA_Orchestrator
@@ -83,7 +83,7 @@ class IntegrationOrchestrator:
         self.Lt = Lt
 
         self.grid_map = GridMap(config_path)
-        self.ca = TimeBasedCollisionAvoidance(self.grid_map)
+        self.ca = CooperativeAStar(self.grid_map)
 
         agent_positions, self.induct_positions, self.eject_positions, charging_positions, energy_config = self._load_config(config_path)
         self.max_energy                  = energy_config['max_energy']

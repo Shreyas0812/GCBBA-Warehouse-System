@@ -64,7 +64,7 @@ GCBBA_Warehouse_System/
 │
 ├── collision_avoidance/            # Multi-agent path planning
 │   ├── grid_map.py                 # YAML config → 3D occupancy grid with BFS distance precomputation
-│   └── time_based_collision_avoidance.py  # Time-Expanded A* with reservation tables
+│   └── cooperative_astar.py        # Cooperative A* — time-expanded A* with reservation tables
 │
 ├── baselines/                      # Baseline algorithms for comparison
 │   ├── CBBA_Agent.py               # Standard CBBA (full-bundle + local consensus)

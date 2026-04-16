@@ -4,9 +4,9 @@ import sys
 
 from collision_avoidance.grid_map import GridMap
 
-class TimeBasedCollisionAvoidance:
+class CooperativeAStar:
     """
-    TimeBasedCollisionAvoidance for collision free MAPF
+    CooperativeAStar for collision-free MAPF
     """
 
     def __init__(self, grid_map):
@@ -236,7 +236,7 @@ if __name__ == "__main__":
     print("\n--- Example: Head-On Collision ---")
     config_path = os.path.join(PROJECT_ROOT, "config", "gridworld_warehouse_small.yaml")
     grid_map = GridMap(config_path)
-    ca = TimeBasedCollisionAvoidance(grid_map)
+    ca = CooperativeAStar(grid_map)
 
     agents = [
         SimpleAgent(0, [5, 4, 0]),
