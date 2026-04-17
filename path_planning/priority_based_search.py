@@ -34,3 +34,7 @@ class PriorityBasedSearch(PathPlanner):
         self.grid_map  = grid_map
         self.max_nodes = max_nodes
         self._ca       = CooperativeAStar(grid_map)
+
+    def hold_position(self, position: tuple, agent_id: int, current_timestep: int) -> None:
+        """Delegate to CA*'s reservation table — no PBS-specific logic needed."""
+        self._ca.hold_position(position, agent_id, current_timestep)
