@@ -190,6 +190,7 @@ class MetricsOrchestrator(IntegrationOrchestrator):
         queue_max_depth: int,
         max_timesteps: int,
         wall_time: float,
+        path_planner: str = "ca_star",
     ) -> None:
         """Fills fields common to both steady-state and batch runs."""
 
@@ -197,6 +198,7 @@ class MetricsOrchestrator(IntegrationOrchestrator):
         m.run_id = f"{config_name}_s{seed}"
         m.config_name = config_name
         m.allocation_method = allocation_method
+        m.path_planner = path_planner
         m.experiment_type = experiment_type
         m.seed = seed
         m.num_agents = num_agents
@@ -331,6 +333,7 @@ def run_single_steady_state_experiment(
         warmup_timesteps=warmup_timesteps,
         config_name=config_name,
         allocation_method=allocation_method,
+        path_planner=path_planner,
         experiment_type="steady_state",
         seed=seed,
         num_agents=len(orch.agent_states),
@@ -396,6 +399,7 @@ def run_single_batch_experiment(
     metrics = orch.collect_batch_metrics(
         config_name=config_name,
         allocation_method=allocation_method,
+        path_planner=path_planner,
         experiment_type="batch",
         seed=seed,
         num_agents=len(orch.agent_states),

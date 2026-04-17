@@ -17,6 +17,7 @@ class RunMetrics:
     run_id: str = ""
     config_name: str = ""
     allocation_method: str = ""       # "gcbba" | "cbba" | "sga"
+    path_planner: str = "ca_star"     # "ca_star" | "rhcr"
     experiment_type: str = ""         # "steady_state" | "batch"
     seed: int = 0
     num_agents: int = 0
