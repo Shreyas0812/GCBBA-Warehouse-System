@@ -38,3 +38,33 @@ class PriorityBasedSearch(PathPlanner):
     def hold_position(self, position: tuple, agent_id: int, current_timestep: int) -> None:
         """Delegate to CA*'s reservation table — no PBS-specific logic needed."""
         self._ca.hold_position(position, agent_id, current_timestep)
+
+    def _pbs_plan(self, agent_states: list, current_timestep: int, max_time: int) -> dict:
+        """Placeholder for PBS planning logic, which is shared between charger and task planning."""
+        # If max_nodes is not set, compute it dynamically as n² (where n = number of agents being planned for).
+        max_nodes = self.max_nodes or (len(agent_states) ** 2)
+        return self._ca.plan_paths(agent_states, current_timestep, max_time, max_nodes)
+
+    def _plan_charger_paths(self, agent_states: list, current_timestep: int,
+                             max_plan_time: int) -> dict:
+        """Plan paths for agents navigating to a charger using PBS.
+
+        Charger agents plan first so task agents route around them.
+        max_time is bounded by max_plan_time (not windowed like RHCR).
+        """
+        if not agent_states:
+            return {}
+        max_time = current_timestep + max_plan_time
+        return self._pbs_plan(agent_states, current_timestep, max_time)
+
+    def _plan_task_paths(self, agent_states: list, current_timestep: int,
+                          max_plan_time: int) -> dict:
+        """Plan paths for task agents using PBS.
+
+        Called after charger paths are already reserved, so PBS routes task
+        agents around both charger reservations and each other.
+        """
+        if not agent_states:
+            return {}
+        max_time = current_timestep + max_plan_time
+        return self._pbs_plan(agent_states, current_timestep, max_time)
