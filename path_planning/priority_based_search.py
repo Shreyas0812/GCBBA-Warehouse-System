@@ -3,6 +3,7 @@ from tqdm import tqdm
 from path_planning.base import PathPlanner
 from path_planning.cooperative_astar import CooperativeAStar
 
+
 class PriorityBasedSearch(PathPlanner):
     """
     Priority-Based Search (Ma et al., 2019).
@@ -15,5 +16,7 @@ class PriorityBasedSearch(PathPlanner):
     complete over the space of priority orderings.
 
     Single-agent solver: CA*'s plan_path_with_reservations (same as CA* and RHCR).
-    max_nodes bounds the DFS tree to prevent runaway search at runtime.
+    max_nodes bounds the DFS tree to prevent runaway search at runtime; defaults
+    to n² (agents being planned for) so the budget scales automatically across maps.
     """
+
