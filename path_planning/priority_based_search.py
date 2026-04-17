@@ -40,10 +40,17 @@ class PriorityBasedSearch(PathPlanner):
         self._ca.hold_position(position, agent_id, current_timestep)
 
     def _pbs_plan(self, agent_states: list, current_timestep: int, max_time: int) -> dict:
-        """Placeholder for PBS planning logic, which is shared between charger and task planning."""
-        # If max_nodes is not set, compute it dynamically as n² (where n = number of agents being planned for).
-        max_nodes = self.max_nodes or (len(agent_states) ** 2)
-        return self._ca.plan_paths(agent_states, current_timestep, max_time, max_nodes)
+        """Core PBS logic: DFS over priority orderings.
+
+        Start: Unconstrained root node, detect conflicts, and branch on the first
+        conflict by creating two child nodes with opposite priority orderings for the
+        conflicting agents. 
+        
+        Replan the lower-priority agent in each child node using CA* with the new
+        constraints. Continue until a conflict-free set of paths is found or max_nodes is
+        reached.
+        
+        """
 
     def _plan_charger_paths(self, agent_states: list, current_timestep: int,
                              max_plan_time: int) -> dict:
