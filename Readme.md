@@ -153,32 +153,68 @@ python -c "from integration.orchestrator import IntegrationOrchestrator; print('
 ### Quick Smoke Test
 
 ```bash
-python experiments/run_experiments.py \
-  --map gridworld_warehouse_small \
-  --mode quick \
-  --config ss_only \
-  --workers 1
+cd experiments
+python run_experiments.py --mode quick --workers 1
+```
+
+### CLI Reference
+
+```
+python run_experiments.py [options]
+
+  --mode {quick,full}        quick: ~8 runs (verify pipeline)
+                             full:  ~1296 runs (thesis data)
+                             Default: full
+
+  --config {all,ss_only,batch_only,cbba_only,sga_only,
+            dmchba_only,baseline_only}
+                             Which experiment types to include
+                             Default: all
+
+  --map NAME                 Map name (matches config/<NAME>.yaml)
+                             Default: gridworld_warehouse_small
+
+  --workers N                Parallel workers (1 = sequential)
+                             Default: 0 (all CPU cores)
+
+  --output PATH              Override default output directory
+                             Default: results/experiments/<map>/<timestamp>
+
+  --path-planner {ca_star,rhcr}
+                             Path planning algorithm
+                             Default: ca_star
+
+  --rhcr-replanning-period H
+                             RHCR replanning horizon h (only used with --path-planner rhcr)
+                             Default: window_size (20)
 ```
 
 ### Running Full Experiments
 
 ```bash
-# Small warehouse — full sweep including baselines
-python experiments/run_experiments.py \
-  --map gridworld_warehouse_small \
-  --mode medium \
-  --config ss_only \
-  --workers 0    # auto-detect CPU cores
+# Smoke test — verify pipeline works (~8 runs, ~5 min)
+python run_experiments.py --mode quick --workers 1
 
-# Large warehouse — scaling experiment
-python experiments/run_experiments.py \
-  --map gridworld_warehouse_large \
-  --mode medium \
-  --config ss_only \
-  --workers 0
+# Full thesis run, sequential (safe on all platforms, ~150 hrs)
+python run_experiments.py --mode full --workers 1
+
+# Full thesis run, 4 parallel workers (~37 hrs)
+python run_experiments.py --mode full --workers 4
+
+# Steady-state sweep only (skip batch experiments)
+python run_experiments.py --mode full --config ss_only --workers 4
+
+# Batch experiments only
+python run_experiments.py --mode full --config batch_only --workers 4
+
+# CBBA + SGA + DMCHBA baselines only (no gcbba)
+python run_experiments.py --mode full --config baseline_only --workers 4
+
+# Custom output directory
+python run_experiments.py --mode full --output results/my_run --workers 4
 ```
 
-Experiment modes: `quick` (~8 runs, pipeline verification), `medium` (~216 runs, initial results), `full` (~720 runs, thesis-quality data with 5 seeds per configuration).
+> **Windows note**: Avoid `--workers 0`. Use an explicit N (e.g. `--workers 4`) or `--workers 1` for sequential. Python uses spawn-based multiprocessing on Windows; `--workers 0` uses all cores but can produce duplicated output headers.
 
 See [SETUP.md](SETUP.md) for detailed instructions on parallelism tuning, large-map baseline strategies, and results interpretation.
 
@@ -190,9 +226,9 @@ The experiment runner sweeps across the following independent variables:
 
 - **Task arrival rate**: Poisson arrival rate per induct station per timestep (e.g., 0.02–0.10)
 - **Communication range**: Euclidean distance threshold for agent-to-agent communication (e.g., 3–45 grid cells)
-- **Allocation method**: `gcbba` (LCBA with local consensus), `cbba` (standard CBBA), `sga` (centralized sequential greedy)
-- **Replanning mode**: Static (one-shot allocation) vs. Dynamic (periodic re-allocation at configurable intervals)
-- **Random seeds**: 5 seeds per configuration for statistical significance
+- **Allocation method**: `gcbba` (LCBA with local consensus), `cbba` (standard CBBA), `sga` (centralized sequential greedy), `dmchba`
+- **Replanning mode**: Event-driven (triggered by task completions, idle agents, or charging events)
+- **Random seeds**: 3 seeds per configuration (42, 123, 456) for statistical significance
 
 ---
 
