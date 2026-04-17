@@ -8,18 +8,18 @@
 #   bash run_all_experiments.sh --workers 8      # override worker count
 #
 # Per-map strategy (from SETUP.md):
-#   warehouse_small  — all         (N=6,   ss + batch, all methods)
-#   warehouse_large  — all         (N=18,  ss + batch, all methods)
-#   crossdock        — gcbba_dmchba (N=50,  GCBBA + DMCHBA ss+batch; CBBA/SGA batch too slow)
-#   kiva             — gcbba_dmchba (N=100, same reasoning)
-#   kiva_large       — gcbba_dmchba (N=200, GCBBA + DMCHBA ss+batch; CBBA/SGA removed)
-#   shelf_aisle      — gcbba_dmchba (N=470, same reasoning)
+#   warehouse_small  — all         (N=6,   ss + batch, GCBBA + CBBA + SGA + DMCHBA)
+#   warehouse_large  — all         (N=18,  ss + batch, GCBBA + CBBA + SGA + DMCHBA)
+#   crossdock        — gcbba_dmchba (N=12,  GCBBA + DMCHBA ss+batch; CBBA/SGA batch too slow)
+#   kiva             — gcbba_dmchba (N=20,  same reasoning)
+#   kiva_large       — gcbba_dmchba (N=80,  GCBBA + DMCHBA ss+batch; CBBA/SGA removed)
+#   shelf_aisle      — gcbba_dmchba (N=200, same reasoning)
 
 set -euo pipefail
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 MODE="full"
-WORKERS=0   # 0 = auto-detect all cores
+WORKERS=12
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -62,43 +62,18 @@ run_exp() {
         --map "$map" \
         --mode "$MODE" \
         --config "$config" \
-        --workers "$WORKERS"
+        --workers "$WORKERS" \
+        --path-planner rhcr
 }
 
-# ── Smoke test (always quick, warehouse_small) ───────────────────────────────
-echo ""
-echo "=== Smoke test (quick, warehouse_small, all) ==="
-python experiments/run_experiments.py \
-    --map gridworld_warehouse_small \
-    --mode quick \
-    --config all \
-    --workers 1
-echo "Smoke test passed."
 
-# ── Skip the full run if mode is quick ──────────────────────────────────────
-if [[ "$MODE" == "quick" ]]; then
-    echo ""
-    echo "mode=quick: smoke test only, exiting."
-    exit 0
-fi
+run_exp gridworld_warehouse_small all "GCBBA + CBBA + SGA + DMCHBA (ss + batch) N=6"
+run_exp gridworld_warehouse_large all "GCBBA + CBBA + SGA + DMCHBA (ss + batch) N=18"
+run_exp gridworld_crossdock        all "GCBBA + CBBA + SGA + DMCHBA (ss + batch) N=12"
+run_exp gridworld_kiva             all "GCBBA + CBBA + SGA + DMCHBA (ss + batch) N=20"
+run_exp gridworld_kiva_large       all "GCBBA + CBBA + SGA + DMCHBA (ss + batch) N=80"
+run_exp gridworld_shelf_aisle      all "GCBBA + CBBA + SGA + DMCHBA (ss + batch) N=200"
 
-# ── warehouse_small — GCBBA + baselines, ss + batch ─────────────────────────
-run_exp gridworld_warehouse_small all "GCBBA + baselines (ss + batch)"
-
-# ── warehouse_large — GCBBA + baselines, ss + batch ─────────────────────────
-run_exp gridworld_warehouse_large all "GCBBA + baselines (ss + batch)"
-
-# ── crossdock — GCBBA + DMCHBA ss+batch; skip CBBA/SGA batch ────────────────
-run_exp gridworld_crossdock gcbba_dmchba "GCBBA + DMCHBA ss+batch (N=50)"
-
-# ── kiva — GCBBA + DMCHBA ss+batch; skip CBBA/SGA batch ─────────────────────
-run_exp gridworld_kiva gcbba_dmchba "GCBBA + DMCHBA ss+batch (N=100)"
-
-# ── kiva_large — GCBBA + DMCHBA only; no CBBA/SGA ───────────────────────────
-run_exp gridworld_kiva_large gcbba_dmchba "GCBBA + DMCHBA ss+batch (N=200)"
-
-# ── shelf_aisle — GCBBA + DMCHBA only; no CBBA/SGA ──────────────────────────
-run_exp gridworld_shelf_aisle gcbba_dmchba "GCBBA + DMCHBA ss+batch (N=470)"
 
 echo ""
 echo "============================================================"
