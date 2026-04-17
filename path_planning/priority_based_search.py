@@ -20,3 +20,17 @@ class PriorityBasedSearch(PathPlanner):
     to n² (agents being planned for) so the budget scales automatically across maps.
     """
 
+    def __init__(self, grid_map, max_nodes: int = None):
+        """
+        Args:
+            grid_map:   GridMap instance shared with the orchestrator.
+            max_nodes:  Maximum PBS tree nodes to expand before falling back
+                        to the last explored paths. Default None — computed
+                        dynamically as n² (where n = number of agents being
+                        planned for) at each call. Node Budget is necessary 
+                        to prevent PBS from running indefinitely at runtime, 
+                        but setting it too low can cause suboptimal paths.
+        """
+        self.grid_map  = grid_map
+        self.max_nodes = max_nodes
+        self._ca       = CooperativeAStar(grid_map)
