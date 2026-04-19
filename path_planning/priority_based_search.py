@@ -39,6 +39,36 @@ class PriorityBasedSearch(PathPlanner):
         """Delegate to CA*'s reservation table — no PBS-specific logic needed."""
         self._ca.hold_position(position, agent_id, current_timestep)
 
+    def _has_cycle(self, priorities: set) -> bool:
+        """Detect if the given priority constraints contain a cycle.
+
+        A cycle would mean that an agent is both higher and lower priority than another agent, which is impossible to satisfy and would lead to wasted computation in PBS.
+        eg. A>B, B>C, C>A
+        """
+        graph = {}
+        for higher, lower in priorities:
+            graph.setdefault(higher, []).append(lower)
+            graph.setdefault(lower, []) # ensure all agents are in the graph even if they have no outgoing edges
+
+        visited = set()
+        rec_stack = set()
+
+        def dfs(agent_id):
+            visited.add(agent_id)
+            rec_stack.add(agent_id)
+
+            for neighbor in graph.get(agent_id, []):
+                if neighbor not in visited:
+                    if dfs(neighbor):
+                        return True
+                elif neighbor in rec_stack:
+                    return True
+
+            rec_stack.remove(agent_id)
+            return False
+        
+        return any(dfs(agent_id) for agent_id in graph if agent_id not in visited)
+
     def _find_conflict(self, paths: dict) -> tuple:
         """Detect the first conflict between any two agents' paths.
         
@@ -171,8 +201,10 @@ class PriorityBasedSearch(PathPlanner):
             ai, aj = conflict
             for higher, lower in [(ai, aj), (aj, ai)]:
                 new_priorities = priorities | {(higher, lower)}
-                # if self._has_cycle(new_priorities):
-                #     continue
+
+                # Skip child nodes that introduce cycles in the priority graph.
+                if self._has_cycle(new_priorities):
+                    continue
                     
                 new_paths = self._plan_with_priorities(agent_states, new_priorities, current_timestep, max_time)
 
