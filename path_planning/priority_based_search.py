@@ -87,6 +87,24 @@ class PriorityBasedSearch(PathPlanner):
         """
         order = self._topological_sort(priorities, agent_states)
 
+        # Clear reservations for all agents being planned for, since we'll re-plan them in a new order. This also ensures that any agents not included in the current PBS node (e.g. because of a cycle) won't have their reservations accidentally preserved.
+        for agent_state in agent_states:
+            self._ca.clear_reservations(agent_state.agent_id)
+
+        paths = {}
+        for agent_state in order:
+            start = agent_state.get_position()
+            goal = agent_state.get_current_goal()
+            path = self._ca.plan_path_with_reservations(start=start, goal=goal, agent_id=agent_state.agent_id, max_time=max_time, start_time=current_timestep)
+
+            if path is None:
+                path = [start]
+
+            self._ca.reserve_path(path, agent_state.agent_id, start_time=current_timestep)
+            paths[agent_state.agent_id] = path
+
+        return paths
+
     def _pbs_plan(self, agent_states: list, current_timestep: int, max_time: int) -> dict:
         """Core PBS logic: DFS over priority orderings.
 
