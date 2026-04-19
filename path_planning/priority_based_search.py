@@ -1,5 +1,3 @@
-from tqdm import tqdm
-
 from path_planning.base import PathPlanner
 from path_planning.cooperative_astar import CooperativeAStar
 
