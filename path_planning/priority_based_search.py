@@ -120,7 +120,9 @@ class PriorityBasedSearch(PathPlanner):
         n = len(agent_states)
         node_budget = self.max_nodes if self.max_nodes is not None else n**2
         root_paths = self._plan_with_priorities(agent_states, set(), current_timestep, max_time)
-
+        stack = [(set(), root_paths)]
+        nodes_expanded = 0
+        list_paths = root_paths
 
 
     def _plan_charger_paths(self, agent_states: list, current_timestep: int,
