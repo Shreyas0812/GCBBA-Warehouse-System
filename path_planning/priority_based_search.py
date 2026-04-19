@@ -40,6 +40,37 @@ class PriorityBasedSearch(PathPlanner):
         self._ca.hold_position(position, agent_id, current_timestep)
 
     def _find_conflict(self, paths: dict) -> tuple:
+        """Detect the first conflict between any two agents' paths.
+        
+        Check agent pairs for:
+        - Vertex conflict: same position at the same timestep
+        - Edge conflict: swapping positions between timesteps
+
+        Shorter paths extend by holding the goal position, so we can check for conflicts up to the longest path length.
+        """
+        agent_ids = list(paths.keys())
+        for idx_i in range(len(agent_ids)):
+            for idx_j in range(idx_i + 1, len(agent_ids)):
+                ai, aj = agent_ids[idx_i], agent_ids[idx_j]
+                path_i, path_j = paths[ai], paths[aj]
+                max_len = max(len(path_i), len(path_j))
+
+                for t in range(max_len):
+                    pos_i = path_i[min(t, len(path_i)-1)]
+                    pos_j = path_j[min(t, len(path_j)-1)]
+
+                    # Vertex conflict
+                    if pos_i == pos_j:
+                        return (ai, aj)
+
+                    # Edge conflict
+                    if t > 0:
+                        prev_pos_i = path_i[min(t-1, len(path_i)-1)]
+                        prev_pos_j = path_j[min(t-1, len(path_j)-1)]
+                        if pos_i == prev_pos_j and pos_j == prev_pos_i:
+                            return (ai, aj)
+        
+        # No conflicts found
         return None
 
     def _topological_sort(self, priorities: set, agent_states: list) -> list:
