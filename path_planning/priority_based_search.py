@@ -208,7 +208,21 @@ class PriorityBasedSearch(PathPlanner):
 
                 stack.append((new_priorities, new_paths))
 
-        # node_budget exhausted - return best path yet even with conflicts
+        # node_budget exhausted — fall back to last_paths (last *popped* node).
+        #
+        # Why re-reserve here: _plan_with_priorities is called when *pushing*
+        # children, not when popping. So after the last iteration the CA* table
+        # holds a child node's reservations, not last_paths. If we returned
+        # without fixing this, charger and task agents in the same timestep
+        # would plan against the wrong constraint set.
+        #   Example with budget=2:
+        #     iter 1: pop ROOT → last_paths=ROOT, push C1, push C2 (table=C2)
+        #     iter 2: pop C2   → last_paths=C2,   push C2a         (table=C2a)
+        #     budget hit → return last_paths=C2, but table still holds C2a
+        for agent_state in agent_states:
+            self._ca.clear_agent_reservations(agent_state.agent_id)
+        for agent_id, path in last_paths.items():
+            self._ca.reserve_path(path, agent_id, start_time=current_timestep)
         return last_paths
 
 
