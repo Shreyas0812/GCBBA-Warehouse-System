@@ -39,6 +39,42 @@ class PriorityBasedSearch(PathPlanner):
         """Delegate to CA*'s reservation table — no PBS-specific logic needed."""
         self._ca.hold_position(position, agent_id, current_timestep)
 
+    def _topological_sort(self, priorities: set, agent_states: list) -> list:
+        """Return agent_states in an order consistent with the given priority constraints.
+        
+        Kahn's algorithm: iteratively add agents with no incoming edges to the ordering and remove their outgoing edges until all agents are ordered or a cycle is detected.
+
+        Agents with no priority constraints can be ordered arbitrarily
+        """
+        ids = [s.agent_id for s in agent_states]
+        id_to_state = {s.agent_id: s for s in agent_states}
+
+        in_degree = {agent_id: 0 for agent_id in ids}
+        graph = {agent_id: [] for agent_id in ids}
+
+        for higher, lower in priorities:
+            if higher in graph and lower in graph:
+                graph[higher].append(lower)
+                in_degree[lower] += 1
+        
+        queue = [agent_id for agent_id in ids if in_degree[agent_id] == 0]
+        result = []
+        while queue:
+            current_agent_id = queue.pop(0)
+            result.append(id_to_state[current_agent_id])
+            for neighbor in graph[current_agent_id]:
+                in_degree[neighbor] -= 1
+                if in_degree[neighbor] == 0:
+                    queue.append(neighbor)
+        
+        # Safety: if result doesn't contain all agents, it means there's a cycle. In that case, we can return the partial ordering and let PBS detect the cycle later.
+        planned = {s.agent_id for s in result}
+        for s in agent_states:
+            if s.agent_id not in planned:
+                result.append(s)
+
+        return result
+
     def _plan_with_priorities(self, agent_states: list, priorities: set, current_timestep: int, max_time: int) -> dict:
         """Plan paths for agents given a set of priority orderings.
 
@@ -49,9 +85,7 @@ class PriorityBasedSearch(PathPlanner):
         sequential CA* loop as CooperativeAStar,
         but with the order determined by PBS priorities rather than random shuffle.
         """
-        paths = {}
-
-        return paths
+        order = self._topological_sort(priorities, agent_states)
 
     def _pbs_plan(self, agent_states: list, current_timestep: int, max_time: int) -> dict:
         """Core PBS logic: DFS over priority orderings.
