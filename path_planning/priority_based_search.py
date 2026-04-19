@@ -39,6 +39,9 @@ class PriorityBasedSearch(PathPlanner):
         """Delegate to CA*'s reservation table — no PBS-specific logic needed."""
         self._ca.hold_position(position, agent_id, current_timestep)
 
+    def _find_conflict(self, paths: dict) -> tuple:
+        return None
+
     def _topological_sort(self, priorities: set, agent_states: list) -> list:
         """Return agent_states in an order consistent with the given priority constraints.
         
@@ -123,6 +126,16 @@ class PriorityBasedSearch(PathPlanner):
         stack = [(set(), root_paths)]
         nodes_expanded = 0
         list_paths = root_paths
+
+        while stack and nodes_expanded < node_budget:
+            priorities, paths = stack.pop()
+            nodes_expanded += 1
+            last_paths = paths
+
+            conflict = self._find_conflict(paths)
+            if conflict is None:
+                return paths # conflict-free path found 
+
 
 
     def _plan_charger_paths(self, agent_states: list, current_timestep: int,
