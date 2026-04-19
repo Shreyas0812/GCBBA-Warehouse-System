@@ -48,16 +48,28 @@ def mean_by_ri(df: pd.DataFrame, metric: str) -> pd.DataFrame:
     )
 
 
+def infer_map_name(csv_path: str) -> str:
+    """Infer map name from the CSV path (parent directories)."""
+    parts = os.path.normpath(csv_path).split(os.sep)
+    # Path pattern: .../experiments/<map_name>/rerun_interval_sensitivity/...
+    for i, part in enumerate(parts):
+        if part == "rerun_interval_sensitivity" and i > 0:
+            return parts[i - 1]
+    return "unknown_map"
+
+
 def plot(csv_path: str, save: bool = False):
     df = load(csv_path)
     output_dir = os.path.dirname(csv_path)
+
+    map_name = infer_map_name(csv_path)
 
     arrival_rates = sorted(df["task_arrival_rate"].unique())
     ri_values = sorted(df["rerun_interval"].unique())
     ri_labels = [ri_display(r) for r in ri_values]
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-    fig.suptitle("rerun_interval Sensitivity — gridworld_warehouse_small", fontsize=13)
+    fig.suptitle(f"rerun_interval Sensitivity — {map_name}", fontsize=13)
 
     # ── Plot 1: Throughput vs ri ──────────────────────────────────────────────
     ax = axes[0]
