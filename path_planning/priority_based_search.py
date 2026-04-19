@@ -39,6 +39,20 @@ class PriorityBasedSearch(PathPlanner):
         """Delegate to CA*'s reservation table — no PBS-specific logic needed."""
         self._ca.hold_position(position, agent_id, current_timestep)
 
+    def _plan_with_priorities(self, agent_states: list, priorities: set, current_timestep: int, max_time: int) -> dict:
+        """Plan paths for agents given a set of priority orderings.
+
+        Clears each agent's prior reservations then re-plans sequentially:
+        higher-priority agents reserve first, lower-priority agents route
+        around them.
+
+        sequential CA* loop as CooperativeAStar,
+        but with the order determined by PBS priorities rather than random shuffle.
+        """
+        paths = {}
+
+        return paths
+
     def _pbs_plan(self, agent_states: list, current_timestep: int, max_time: int) -> dict:
         """Core PBS logic: DFS over priority orderings.
 
@@ -49,8 +63,13 @@ class PriorityBasedSearch(PathPlanner):
         Replan the lower-priority agent in each child node using CA* with the new
         constraints. Continue until a conflict-free set of paths is found or max_nodes is
         reached.
-        
         """
+
+        n = len(agent_states)
+        node_budget = self.max_nodes if self.max_nodes is not None else n**2
+        root_paths = self._plan_with_priorities(agent_states, set(), current_timestep, max_time)
+
+
 
     def _plan_charger_paths(self, agent_states: list, current_timestep: int,
                              max_plan_time: int) -> dict:
