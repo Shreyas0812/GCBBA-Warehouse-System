@@ -156,7 +156,7 @@ class PriorityBasedSearch(PathPlanner):
         root_paths = self._plan_with_priorities(agent_states, set(), current_timestep, max_time)
         stack = [(set(), root_paths)]
         nodes_expanded = 0
-        list_paths = root_paths
+        last_paths = root_paths
 
         while stack and nodes_expanded < node_budget:
             priorities, paths = stack.pop()
@@ -166,7 +166,20 @@ class PriorityBasedSearch(PathPlanner):
             conflict = self._find_conflict(paths)
             if conflict is None:
                 return paths # conflict-free path found 
+            
+            # Conflict found - branch on the conflict by creating two child nodes with opposite priority orderings for the conflicting agents, then replan the lower-priority agent in each child node using CA* with the new constraints.
+            ai, aj = conflict
+            for higher, lower in [(ai, aj), (aj, ai)]:
+                new_priorities = priorities | {(higher, lower)}
+                # if self._has_cycle(new_priorities):
+                #     continue
+                    
+                new_paths = self._plan_with_priorities(agent_states, new_priorities, current_timestep, max_time)
 
+                stack.append((new_priorities, new_paths))
+
+        # node_budget exhausted - return best path yet even with conflicts
+        return last_paths
 
 
     def _plan_charger_paths(self, agent_states: list, current_timestep: int,
