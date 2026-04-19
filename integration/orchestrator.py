@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from path_planning.grid_map import GridMap
 from path_planning.cooperative_astar import CooperativeAStar
 from path_planning.rhcr_castar import RHCRCAStar
+from path_planning.priority_based_search import PriorityBasedSearch
 
 from gcbba.GCBBA_Orchestrator import GCBBA_Orchestrator
 from baselines.SGA_Orchestrator import SGA_Orchestrator
@@ -65,7 +66,7 @@ class IntegrationOrchestrator:
                  max_plan_time: int = 400,
                  Lt: Optional[int] = None,
                  allocation_method: str = "gcbba",  # "gcbba", "sga", "cbba" or "dmchba"
-                 path_planner: str = "ca_star",          # "ca_star" or "rhcr"
+                 path_planner: str = "ca_star",          # "ca_star", "rhcr", or "pbs"
                  rhcr_replanning_period: int = None,    # h parameter; defaults to window_size (h=w)
                  ) -> None:
 
@@ -87,7 +88,7 @@ class IntegrationOrchestrator:
         self.Lt = Lt
 
         self.grid_map = GridMap(config_path)
-        _planners = {"ca_star": CooperativeAStar, "rhcr": RHCRCAStar}
+        _planners = {"ca_star": CooperativeAStar, "rhcr": RHCRCAStar, "pbs": PriorityBasedSearch}
         if path_planner not in _planners:
             raise ValueError(f"Invalid path_planner: {path_planner!r}. Must be one of {list(_planners)}")
         if path_planner == "rhcr":
