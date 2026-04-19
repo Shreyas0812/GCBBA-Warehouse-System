@@ -153,7 +153,7 @@ class PriorityBasedSearch(PathPlanner):
 
         # Clear reservations for all agents being planned for, since we'll re-plan them in a new order. This also ensures that any agents not included in the current PBS node (e.g. because of a cycle) won't have their reservations accidentally preserved.
         for agent_state in agent_states:
-            self._ca.clear_reservations(agent_state.agent_id)
+            self._ca.clear_agent_reservations(agent_state.agent_id)
 
         paths = {}
         for agent_state in order:
