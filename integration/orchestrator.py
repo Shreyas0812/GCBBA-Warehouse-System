@@ -746,7 +746,7 @@ class IntegrationOrchestrator:
             gcbba_rerun = True  # Trigger rerun if enough tasks completed since last run
 
         # Trigger rerun when unassigned tasks are pending and idle agents are available
-        if not gcbba_rerun and self._pending_task_ids:
+        if not gcbba_rerun and self._pending_task_ids and time_since_last_gcbba >= self.new_task_cooldown:
             if any(a.is_idle and not a.is_charging and not a.is_navigating_to_charger
                    for a in self.agent_states):
                 gcbba_rerun = True
