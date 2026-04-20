@@ -1,0 +1,328 @@
+%% ============================================================
+%%  Chapter 4: Experimental Evaluation
+%% ============================================================
+\chapter{Experimental Evaluation}
+\label{chap:experiments}
+
+% GUIDANCE: 15--20 pages. This is your results chapter.
+% Write the setup sections NOW (they don't need results).
+% Leave \todo placeholders for figures and tables.
+% Fill in numbers once experiments finish.
+
+
+% ── 4.1 ─────────────────────────────────────────────────────────
+\section{Experimental Setup}
+\label{sec:exp_setup}
+
+
+\subsection{Environment Configuration}
+\label{subsec:exp_environment}
+
+\todo{Describe the simulation environment used for all experiments:
+  30$\times$30 grid, 6 agents, 8 induct stations, 38 eject stations.
+  YAML config file parameters. Timestep definition.}
+
+
+\subsection{Parameters Swept}
+\label{subsec:exp_parameters}
+
+All experiments sweep the following parameters:
+
+\begin{itemize}
+  \item \textbf{Communication range} $\comm \in \{3, 5, 8, 13, 20, 45\}$
+        grid units, ranging from fully isolated to fully connected.
+  \item \textbf{Tasks per induct station} $\in \{2, 5, 10\}$,
+        yielding 16, 40, and 80 total tasks respectively.
+  \item \textbf{Rerun interval} (Dynamic GCBBA only)
+        $\in \{10, 25, 50, 100, 200\}$ timesteps, with $ri = 50$
+        as the canonical configuration.
+\end{itemize}
+
+Each configuration is repeated across 5 random seeds.
+The maximum timestep budget is 800 per run.
+
+\todo{Add table summarising all parameter combinations and
+total run counts per mode (quick/medium/full).}
+
+
+\subsection{Metrics}
+\label{subsec:exp_metrics}
+
+\todo{Define each metric precisely:
+  \textbf{Makespan}: timesteps to complete all tasks ($-1$ if DNF);
+  \textbf{Completion rate}: fraction of seeds where all tasks complete;
+  \textbf{Sub-optimality ratio}: method makespan / SGA makespan
+    (only computed where both methods complete);
+  \textbf{Distinct stuck events}: number of agent transitions
+    into the stuck state (NOT cumulative stuck timesteps);
+  \textbf{Vertex collisions}: post-hoc count of two agents at
+    the same cell at the same timestep;
+  \textbf{Task balance std}: std dev of tasks completed per agent;
+  \textbf{Average idle ratio}: fraction of timesteps each agent
+    spends not moving.}
+
+
+\subsection{Baselines}
+\label{subsec:exp_baselines}
+
+\todo{One paragraph each on SGA and CBBA as implemented.
+  Reiterate that all methods share the same collision avoidance
+  pipeline -- this is the key design decision for fair comparison.
+  Note the SGA caveat: on disconnected graphs, SGA runs per
+  connected component independently (generous upper bound).}
+
+
+% ── 4.2 ─────────────────────────────────────────────────────────
+\section{Communication Robustness}
+\label{sec:exp_comm_robustness}
+
+% THE KEY RESULT. Dynamic GCBBA completes tasks where static fails.
+
+\subsection{Task Completion Rate}
+\label{subsec:exp_completion_rate}
+
+\todo{Write analysis of completion rate results.
+  Key finding: Dynamic GCBBA achieves 100\% completion at $\comm = 13$
+  (barely connected) and disconnected ranges where Static GCBBA and
+  CBBA achieve 0\%. Reference Figure~\ref{fig:completion_rate}.}
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=\textwidth]{completion_rate}
+  \todo{Insert completion\_rate.png}
+  \caption{Task completion rate by communication range, aggregated
+           across all task loads and seeds. The shaded region
+           indicates disconnected graph configurations
+           ($\comm < 13$).}
+  \label{fig:completion_rate}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=\textwidth]{completion_rate_by_tpi}
+  \todo{Insert completion\_rate\_by\_tpi.png}
+  \caption{Task completion rate broken down by task load.}
+  \label{fig:completion_rate_by_tpi}
+\end{figure}
+
+
+\subsection{Makespan Under Varying Connectivity}
+\label{subsec:exp_makespan_comm}
+
+\todo{Analyse makespan vs communication range.
+  For connected graphs ($\comm \geq 13$), all methods complete
+  tasks -- focus on efficiency differences.
+  For disconnected graphs, only Dynamic GCBBA completes --
+  discuss why (event-driven replanning allows agents to
+  reassign when connectivity changes as robots move).
+  Reference Figure~\ref{fig:makespan_vs_comm}.}
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=\textwidth]{makespan_vs_comm_range}
+  \todo{Insert makespan\_vs\_comm\_range.png}
+  \caption{Makespan vs.\ communication range for all methods
+           across three task loads.}
+  \label{fig:makespan_vs_comm}
+\end{figure}
+
+
+% ── 4.3 ─────────────────────────────────────────────────────────
+\section{Optimality Analysis}
+\label{sec:exp_optimality}
+
+% Second key result: GCBBA stays near SGA on connected graphs.
+
+\subsection{Sub-Optimality Ratio vs.\ SGA}
+\label{subsec:exp_suboptimality}
+
+\todo{Present sub-optimality ratio results.
+  Key message: on connected graphs, Dynamic GCBBA achieves
+  ratio $\approx 1.0$--$1.X$, well within the theoretical
+  bound of 2.0. Static GCBBA shows higher ratio due to
+  inability to reallocate as tasks complete.
+  Reference Figure~\ref{fig:optimality_ratio}.}
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=\textwidth]{optimality_ratio}
+  \todo{Insert optimality\_ratio.png. Include the theoretical
+  bound line at 2.0 and the SGA reference line at 1.0.}
+  \caption{Sub-optimality ratio (method makespan / SGA makespan)
+           vs.\ communication range. Only runs where both the
+           method and SGA completed are included.
+           The dashed line at 2.0 indicates the theoretical
+           worst-case guarantee for GCBBA on connected graphs.}
+  \label{fig:optimality_ratio}
+\end{figure}
+
+
+\subsection{Makespan Gap Relative to SGA}
+\label{subsec:exp_makespan_gap}
+
+\todo{Analyse improvement\_ratio.png.
+  Show that on fully connected graphs, Dynamic GCBBA is within
+  X\% of SGA. Note that on disconnected graphs, SGA is not a
+  fair reference (it runs per component).}
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=\textwidth]{improvement_ratio}
+  \todo{Insert improvement\_ratio.png}
+  \caption{Makespan gap relative to SGA, expressed as a
+           percentage. Positive values indicate slower
+           performance than SGA. Only runs where both the
+           method and SGA completed are included.}
+  \label{fig:improvement_ratio}
+\end{figure}
+
+
+% ── 4.4 ─────────────────────────────────────────────────────────
+\section{Rerun Interval Sensitivity}
+\label{sec:exp_sensitivity}
+
+\todo{Present the rerun interval sweep results.
+  Key message: performance is not critically sensitive to the
+  chosen value of $ri$, validating the $ri = 50$ design choice.
+  Very low $ri$ (10) may degrade due to computational overhead
+  of frequent replanning. Very high $ri$ (200) degrades
+  completion rate at lower comm ranges.
+  Reference Figure~\ref{fig:ri_sweep}.}
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=\textwidth]{rerun_interval_sweep}
+  \todo{Insert rerun\_interval\_sweep.png}
+  \caption{Makespan (top) and completion rate (bottom) for
+           Dynamic GCBBA across rerun interval values.
+           The canonical $ri = 50$ is shown with a solid line.}
+  \label{fig:ri_sweep}
+\end{figure}
+
+
+% ── 4.5 ─────────────────────────────────────────────────────────
+\section{Safety: Collisions and Deadlocks}
+\label{sec:exp_safety}
+
+\todo{Present collision and deadlock results.
+  Expected finding: vertex collisions should be zero or near-zero
+  (the collision avoidance pipeline works). If non-zero, explain
+  under what conditions they occur.
+  Stuck events should decrease with higher comm range / lower
+  task load. Reference Figure~\ref{fig:collision_deadlock}.
+  Clearly state that stuck events are transition-based
+  (one event per agent entry into stuck state, not per timestep).}
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=\textwidth]{collision_deadlock}
+  \todo{Insert collision\_deadlock.png}
+  \caption{Post-hoc vertex collision count (left) and distinct
+           agent stuck events (right) by communication range.}
+  \label{fig:collision_deadlock}
+\end{figure}
+
+
+% ── 4.6 ─────────────────────────────────────────────────────────
+\section{Computational Overhead}
+\label{sec:exp_timing}
+
+\todo{Present GCBBA timing results.
+  Key question: does the extra overhead of dynamic replanning
+  justify the completion rate gains?
+  Show avg allocation time per call vs task count.
+  Show number of allocation reruns vs comm range.
+  Dynamic GCBBA does more reallocation calls -- is the wall-clock
+  cost acceptable for real-time use?
+  Reference Figure~\ref{fig:gcbba_timing} and
+  Figure~\ref{fig:trigger_breakdown}.}
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=\textwidth]{gcbba_timing}
+  \todo{Insert gcbba\_timing.png}
+  \caption{Average allocation computation time per call (left)
+           and number of allocation reruns per run (right),
+           grouped by task load.}
+  \label{fig:gcbba_timing}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=\textwidth]{trigger_breakdown}
+  \todo{Insert trigger\_breakdown.png}
+  \caption{GCBBA rerun trigger breakdown for Dynamic GCBBA
+           ($ri = 50$): batch-triggered (task completions)
+           vs.\ interval-triggered reruns.}
+  \label{fig:trigger_breakdown}
+\end{figure}
+
+
+% ── 4.7 ─────────────────────────────────────────────────────────
+\section{Agent Utilisation and Load Balance}
+\label{sec:exp_utilisation}
+
+\todo{Present agent utilisation results.
+  Key question: does GCBBA distribute tasks fairly across agents?
+  Compare task\_balance\_std across methods.
+  Dynamic GCBBA should show better balance (replanning corrects
+  early imbalances as tasks complete).
+  Reference Figure~\ref{fig:utilisation}.}
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=\textwidth]{agent_utilization}
+  \todo{Insert agent\_utilization.png}
+  \caption{Agent idle ratio (left) and task balance standard
+           deviation (right) by task load. Lower balance std
+           indicates more even task distribution.}
+  \label{fig:utilisation}
+\end{figure}
+
+
+% ── 4.8 ─────────────────────────────────────────────────────────
+\section{Throughput Analysis}
+\label{sec:exp_throughput}
+
+\todo{Present throughput curves (cumulative tasks completed
+  over time) for the most informative configurations:
+  lowest comm range (most stress) and highest (baseline).
+  Show the difference in curve shape between Static and Dynamic
+  GCBBA at low comm ranges -- Static plateaus early, Dynamic
+  continues completing tasks.
+  Reference Figure~\ref{fig:throughput}.}
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=\textwidth]{throughput_curves}
+  \todo{Insert throughput\_curves.png}
+  \caption{Cumulative task completion over time at the lowest
+           (left) and highest (right) communication ranges,
+           for maximum task load.}
+  \label{fig:throughput}
+\end{figure}
+
+
+% ── 4.9 ─────────────────────────────────────────────────────────
+\section{Summary of Results}
+\label{sec:exp_summary}
+
+\todo{Write a 1-page synthesis. Use the results table
+  (Table~\ref{tab:results}) as the anchor. Structured around
+  the three research questions from Chapter 1:
+  RQ1 (completion under disconnected graphs): answered by
+    Section~\ref{sec:exp_comm_robustness};
+  RQ2 (near-optimality on connected graphs): answered by
+    Section~\ref{sec:exp_optimality};
+  RQ3 (replanning frequency): answered by
+    Section~\ref{sec:exp_sensitivity}.}
+
+\begin{table}[htbp]
+  \centering
+  \todo{Insert results\_table.tex generated by plot\_results.py.
+  Use \textbackslash input\{results\_table\} once the file is
+  generated.}
+  \caption{Summary of experimental results across all methods,
+           task loads, and communication ranges.}
+  \label{tab:results}
+\end{table}

@@ -1,0 +1,76 @@
+%% ============================================================
+%%  Chapter 5: Conclusion
+%% ============================================================
+\chapter{Conclusion}
+\label{chap:conclusion}
+
+% GUIDANCE: 4--6 pages. Write this last.
+% Structure: summary → contributions revisited → limitations →
+%            future work.
+% Be honest about limitations -- committees respect this far more
+% than hand-waving.
+
+
+% ── 5.1 ─────────────────────────────────────────────────────────
+\section{Summary}
+\label{sec:conclusion_summary}
+
+% Briefly restate what you set out to do and what you found.
+% Do NOT introduce new results here.
+
+\todo{Write 1--2 paragraphs summarising the thesis.
+  Open with the problem (multi-robot coordination in warehouse
+  environments under communication constraints).
+  Summarise the approach (hybrid GCBBA + prioritised A*,
+  event-driven dynamic replanning).
+  Summarise the key findings without repeating Chapter 4 in full.}
+
+
+% ── 5.2 ─────────────────────────────────────────────────────────
+\section{Contributions Revisited}
+\label{sec:conclusion_contributions}
+
+% Map each contribution listed in Section~\ref{sec:intro_contributions}
+% to the specific evidence from Chapter 4 that supports it.
+
+\todo{Revisit each contribution from the Introduction and state
+  which experimental result supports it. Be precise:
+  ``Dynamic GCBBA achieves 100\% task completion at $\comm = 13$
+  where Static GCBBA achieves 0\% (Section~\ref{subsec:exp_completion_rate})''.
+  Avoid vague language like ``our method outperforms baselines''.}
+
+
+% ── 5.3 ─────────────────────────────────────────────────────────
+\section{Limitations}
+\label{sec:conclusion_limitations}
+
+% Be honest. Committees will ask about limitations regardless.
+% Naming them yourself shows rigour.
+
+\todo{Discuss limitations honestly. Suggested:
+  (1) Centralised collision avoidance does not scale to
+      truly decentralised settings (single point of failure
+      in the path planner);
+  (2) Experiments are simulation-only on a 30$\times$30 grid;
+      real warehouses are larger and have different obstacle layouts;
+  (3) SGA on disconnected graphs runs per component -- the
+      sub-optimality ratio comparison is generous to SGA;
+  (4) Fixed robot speeds and no sensor noise -- real robots
+      have actuation uncertainty;
+  (5) The 800-timestep ceiling may not be long enough for
+      very high task loads at low comm range.}
+
+
+% ── 5.4 ─────────────────────────────────────────────────────────
+\section{Future Work}
+\label{sec:conclusion_future}
+
+\todo{Describe concrete future directions. Suggested:
+  (1) Fully decentralised collision avoidance
+      (distributed reservation tables or CBS-based);
+  (2) Extension to time-windowed tasks (task deadlines);
+  (3) Scaling to larger grids and higher agent counts;
+  (4) Heterogeneous agents (different speeds, capacities);
+  (5) Real robot implementation and evaluation;
+  (6) Learning-based communication graph prediction to
+      anticipate connectivity changes before they happen.}

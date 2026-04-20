@@ -1,0 +1,109 @@
+%% ============================================================
+%%  Chapter 1: Introduction
+%% ============================================================
+\chapter{Introduction}
+\label{chap:introduction}
+
+% GUIDANCE: 4--6 pages. No results here. The goal is to:
+%   1. Motivate the problem compellingly
+%   2. State clearly what you built and why it matters
+%   3. Summarise contributions (bullet list is fine)
+%   4. Outline the rest of the thesis
+% Write this chapter second-to-last (after Chapter 3 is solid).
+
+
+% ── 1.1 ─────────────────────────────────────────────────────────
+\section{Motivation}
+\label{sec:intro_motivation}
+
+% Start with the big picture: modern warehouse automation, the scale
+% of the coordination problem, and why it is hard.
+% Key tension to establish early: centralized approaches work well
+% but are fragile; decentralized approaches are robust but hard to
+% make efficient. Your work sits at this intersection.
+
+\todo{Write motivation. Ground it in warehouse automation: order
+fulfilment scale, robot fleets, why coordination matters. Cite
+relevant industry context and prior work to establish stakes.}
+
+LCBA, is basically based on the simple idea I had was... don't wait for everything to be perfect. Real world is stochastic. Unexpected situations are the norm and hence a decentralized system which can better account for this ever changing structure are an importatnt topic to discuss. 
+
+Multi-robot task allocation matters in several scenarios where situations are stochastic. Warehouse logistics is the scencario chosen for this Thesis as it is possible to extract meaningful metrics for proving the use. Other scenarios which are not explored deeply but are still relevant to the discussin could be.... underwater robotics [Linking some papers here and talking about them] where GPS is non-existent. Space Robotics for similar reasons where communcation can drop off due to unforseen scenarios and cannot be reestablished. In which case the robot will still retain functionality. 
+
+Disaster response is another scenario where all communication might break down or is delayed and disctributed processes such are LCBA which are robust and most imporatantly fast can prove to be crucial.
+
+
+% ── 1.2 ─────────────────────────────────────────────────────────
+\section{Problem Statement}
+\label{sec:intro_problem}
+
+% Be precise. Name the two sub-problems you solve:
+%   (a) Multi-robot task allocation under communication constraints
+%   (b) Collision-free path execution for allocated tasks
+% Identify the key challenge: communication graphs are dynamic and
+% may be disconnected, which breaks static allocation approaches.
+
+\todo{Write a crisp 1--2 paragraph problem statement. Define the
+warehouse setting (30x30 grid, 6 robots, 8 induct stations,
+38 eject stations). Name the two problems explicitly.}
+
+The problem we are trying to solve is Decentralized Multi Robot Task allocation under intermittent/disconnected communcation graphs. Existing methods that we looked at either assume full connectivity or degrade cathastrophically when it is lost. 
+
+
+
+
+% ── 1.3 ─────────────────────────────────────────────────────────
+\section{Research Questions}
+\label{sec:intro_questions}
+
+% Frame these as testable questions your experiments will answer.
+% Suggested:
+%   RQ1: Can dynamic GCBBA achieve task completion under communication
+%        conditions where static allocation fails entirely?
+%   RQ2: How close to optimal (SGA) does GCBBA perform across varying
+%        communication connectivity?
+%   RQ3: How does replanning frequency (rerun interval) affect
+%        performance and computational overhead?
+
+\todo{State 2--3 focused research questions.}
+
+
+% ── 1.4 ─────────────────────────────────────────────────────────
+\section{Contributions}
+\label{sec:intro_contributions}
+
+% Be concrete. Do not oversell. Suggested framing:
+
+\todo{Write contributions list. Suggested:
+(1) Integration of GCBBA with prioritised A* collision avoidance
+    in a hybrid decentralised/centralised architecture;
+(2) Event-driven dynamic replanning that achieves graceful
+    degradation under communication failures;
+(3) Empirical validation showing 100\% task completion at
+    disconnected ranges where static and CBBA baselines fail;
+(4) Sub-optimality analysis demonstrating near-SGA performance
+    on connected graphs.}
+
+Integration of GHCBBA with intermittently connected graphs and expanding the view from the one of one timestep to as a system which can simulataneously maintatin some guaranteees from GCBBA while also being robust and quick enought to get the tasks done in time. 
+
+If GCBBA can converge to a 50 percent optimal solution, so can LCBA given an adept number of iterations to reach the same in the overall system view sense. 
+
+
+% ── 1.5 ─────────────────────────────────────────────────────────
+\section{Thesis Outline}
+\label{sec:intro_outline}
+
+% One short paragraph per chapter explaining what it covers.
+
+The remainder of this thesis is organised as follows.
+\Cref{chap:background} reviews related work in multi-robot task
+allocation, decentralised coordination, and multi-agent path
+finding.
+\Cref{chap:methodology} describes the system architecture,
+the GCBBA algorithm and its warehouse adaptation, the
+collision avoidance pipeline, and the dynamic replanning mechanism.
+\Cref{chap:experiments} presents the experimental setup,
+baselines, and quantitative results across varying communication
+ranges and task loads.
+\Cref{chap:conclusion} discusses the findings, limitations, and
+directions for future work.

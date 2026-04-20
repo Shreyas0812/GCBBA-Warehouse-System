@@ -1,0 +1,367 @@
+%% ============================================================
+%%  Chapter 3: System Design and Methodology
+%% ============================================================
+\chapter{System Design and Methodology}
+\label{chap:methodology}
+
+% GUIDANCE: 10--15 pages. This is your strongest chapter -- you built
+% all of this and know it cold. Write it first.
+% Structure: problem formulation → system overview →
+%            each component in depth → integration.
+% Use figures and pseudocode liberally. Equations should be numbered.
+
+
+% ── 3.1 ─────────────────────────────────────────────────────────
+\section{Problem Formulation}
+\label{sec:method_formulation}
+
+% Give a precise mathematical statement of what you are solving.
+% This locks down notation used throughout the chapter.
+
+\todo{Write formal problem statement. Define:
+  $\mathcal{A} = \{a_1, \ldots, a_{\Na}\}$ -- set of agents;
+  $\mathcal{T} = \{t_1, \ldots, t_{\Nt}\}$ -- set of tasks
+    (each task = pickup at induct station $s_j^{in}$,
+     deliver to eject station $s_j^{ej}$);
+  $G(t)$ -- dynamic communication graph at time $t$
+    (edge $(i,k)$ iff $\|x_i - x_k\| \leq \comm$);
+  Objective: minimise makespan (time to complete all tasks)
+    subject to: collision-free paths, task completion,
+    using only information available within communication range.}
+
+$\mathcal{A} = \{a_1, \ldots, a_{\Na}\}$ -- set of agents \\
+$\mathcal{T} = \{t_1, \ldots, t_{\Nt}\}$ -- set of tasks \\
+
+(each task = pickup at induct station $s_j^{in}$,
+     deliver to eject station $s_j^{ej}$); \\
+
+       $G(t)$ -- dynamic communication graph at time $t$
+    (edge $(i,k)$ iff $\|x_i - x_k\| \leq \comm$);\\
+    
+  Objective: minimise makespan (time to complete all tasks) \\
+    subject to: collision-free paths, task completion,
+    using only information available within communication range. \\
+
+We define several warehouse scenarios:
+
+1. Small Warehouse 
+2.
+3.
+4.
+5.
+
+
+% ── 3.2 ─────────────────────────────────────────────────────────
+\section{System Architecture Overview}
+\label{sec:method_overview}
+
+% A high-level block diagram showing the two main components
+% (GCBBA allocator + collision avoidance path planner) and how
+% they interact through the Integration Orchestrator.
+% The key design decision to motivate: hybrid decentralised
+% (allocation) / centralised (collision avoidance). Justify this.
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=0.9\textwidth]{system_architecture}
+  \todo{Insert system architecture block diagram. Show:
+  IntegrationOrchestrator, GCBBA\_Orchestrator,
+  TimeBasedCollisionAvoidance, AgentState, and the data flow
+  between them.}
+  \caption{System architecture overview. The Integration
+           Orchestrator coordinates between the GCBBA task
+           allocator and the time-based collision avoidance
+           path planner.}
+  \label{fig:system_architecture}
+\end{figure}
+
+\todo{Write 1 page explaining the hybrid architecture. The key
+justification: task allocation is inherently decentralised
+(agents have different information under disconnected graphs),
+but collision avoidance requires global spatial knowledge that
+is cheaper to centralise in a bounded warehouse.}
+
+
+% ── 3.3 ─────────────────────────────────────────────────────────
+\section{Warehouse Environment}
+\label{sec:method_environment}
+
+% Describe the grid world: dimensions, obstacle layout, station
+% positions, agent starting positions. This grounds all subsequent
+% discussion.
+
+\todo{Describe the 30$\times$30 grid environment:
+  6 agents, 8 induct stations, 38 eject stations, obstacle layout.
+  Include a figure of the grid world from your visualisation.
+  Define the continuous-to-grid coordinate mapping.}
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=0.6\textwidth]{gridworld}
+  \todo{Insert grid world figure showing agent starting positions,
+  induct stations (I), eject stations (E), and obstacles.}
+  \caption{The $30 \times 30$ warehouse grid environment.
+           Induct stations (blue) are task pickup locations;
+           eject stations (red) are delivery destinations.}
+  \label{fig:gridworld}
+\end{figure}
+
+
+% ── 3.4 ─────────────────────────────────────────────────────────
+\section{GCBBA for Warehouse Task Allocation}
+\label{sec:method_gcbba}
+
+% This is the algorithmic core. Cover: RPT metric, bundle building,
+% global consensus, convergence, how you adapted it to warehouses.
+
+
+% ── 3.4.1 ──────────────────────────────────────────────────────
+\subsection{The RPT Utility Function}
+\label{subsec:method_rpt}
+
+% Define RPT formally. Prove (or cite proof) that it is DMG.
+% Show that it aligns with makespan objective.
+
+The Repeated Path Times (RPT) utility function~\citep{kha2025enhancing}
+assigns a score to agent $i$'s task path $p_i$ as:
+
+\begin{equation}
+  S_i^{\text{RPT}}(p_i) = -\sum_{j \in p_i}
+    \tau_{ij}(p_i^{\preceq j})
+  \label{eq:rpt}
+\end{equation}
+
+\noindent where $\tau_{ij}(p_i^{\preceq j})$ is the completion
+time of task $j$ given the subsequence of $p_i$ up to and
+including $j$.
+
+\todo{Expand definition. Show marginal gain computation.
+Prove or cite the DMG property of RPT. Explain why DMG is
+essential for the 50\% optimality guarantee.}
+
+
+% ── 3.4.2 ──────────────────────────────────────────────────────
+\subsection{Bundle Building Phase}
+\label{subsec:method_bundle}
+
+% Describe the ADD bundle building strategy. Pseudocode here.
+
+\begin{algorithm}[htbp]
+\caption{GCBBA Bundle Building (agent $i$)}
+\label{alg:bundle_building}
+\begin{algorithmic}[1]
+\Require Tasks $\mathcal{T}$, current path $p_i$, bids $y$, winners $z$
+\While{$|b_i| < \Lt$ and not converged}
+  \ForAll{task $j \notin p_i$}
+    \State Compute bid $c_{ij} \leftarrow
+           S_i(p_i \oplus_{\text{opt}} j) - S_i(p_i)$
+  \EndFor
+  \State $j^* \leftarrow \arg\max_j \{c_{ij} : c_{ij} > y_j\}$
+  \If{$j^*$ exists}
+    \State Add $j^*$ to bundle $b_i$, insert into path $p_i$
+    \State $y_{j^*} \leftarrow c_{ij^*}$, $z_{j^*} \leftarrow i$
+  \Else
+    \State \textbf{break}
+  \EndIf
+\EndWhile
+\end{algorithmic}
+\end{algorithm}
+
+\todo{Expand pseudocode and explain each step. Describe BFS-based
+distance lookup used for efficient $\tau_{ij}$ computation
+(the key optimisation that makes this practical on a grid).}
+
+
+% ── 3.4.3 ──────────────────────────────────────────────────────
+\subsection{Global Consensus Phase}
+\label{subsec:method_consensus}
+
+% The key difference between CBBA and GCBBA: global vs local
+% consensus. Explain the conflict resolution rules (update/reset/
+% leave) and how global consensus restores SGA convergence.
+
+\todo{Describe the $2D$ consensus rounds per iteration where $D$
+is the graph diameter. Explain the conflict resolution table
+from~\citep{kha2025enhancing}. Show how this ensures GCBBA
+converges to the SGA solution (Theorem from paper).}
+
+
+% ── 3.4.4 ──────────────────────────────────────────────────────
+\subsection{Decentralised Convergence Detection}
+\label{subsec:method_convergence}
+
+% The $E^{cvg}$ vector mechanism. This allows early termination
+% which is important for computational efficiency in real-time use.
+
+\todo{Describe the convergence detection vector~\citep{kha2025enhancing}.
+State the convergence bound $N_{\min} = \min(\Nt, \Lt \cdot \Na)$
+and explain why early stopping matters for real-time operation.}
+
+
+% ── 3.4.5 ──────────────────────────────────────────────────────
+\subsection{Warehouse Adaptation}
+\label{subsec:method_warehouse_adaptation}
+
+% How you adapted the original GCBBA (designed for point tasks)
+% to the pickup-and-delivery task structure.
+% Key change: BFS distance tables replace Euclidean distance,
+% grid positions replace continuous positions.
+
+\todo{Describe adaptations:
+  (1) Pickup-and-delivery task structure (two waypoints per task);
+  (2) BFS pre-computed distance tables for grid-based $\tau_{ij}$;
+  (3) Communication graph construction from agent proximity
+      (\texttt{create\_graph\_with\_range});
+  (4) Diameter computation on potentially disconnected graphs
+      (max component diameter).}
+
+
+% ── 3.5 ─────────────────────────────────────────────────────────
+\section{Collision-Free Path Planning}
+\label{sec:method_collision}
+
+% Describe the time-based A* with reservation tables.
+% This is the second major component.
+
+
+% ── 3.5.1 ──────────────────────────────────────────────────────
+\subsection{Space-Time A* with Reservation Tables}
+\label{subsec:method_astar}
+
+% Formally describe the space-time search: state = (position, t),
+% reservations encode other agents' committed positions.
+
+\todo{Describe the time-based A* formulation. State:
+  search state $(x, y, z, t)$;
+  vertex conflict: two agents at same $(x,y,z,t)$;
+  edge conflict: swap conflict at time $t$;
+  cost function and heuristic (Manhattan distance).
+  Include pseudocode or refer to Algorithm X.}
+
+
+% ── 3.5.2 ──────────────────────────────────────────────────────
+\subsection{Priority Ordering}
+\label{subsec:method_priority}
+
+% How agents are ordered when planning paths. Higher priority agents
+% plan first; lower priority agents route around them.
+% Discuss the completeness trade-off.
+
+\todo{Describe priority-based path planning. Explain the
+completeness caveat: prioritised A* is not guaranteed complete
+with fixed priorities, but the stuck detection + replanning
+mechanism provides a practical recovery path.}
+
+
+% ── 3.5.3 ──────────────────────────────────────────────────────
+\subsection{Goal Reservation Mechanism}
+\label{subsec:method_goal_reservation}
+
+% The goal reservation prevents agents from blocking each other
+% at destination cells indefinitely. Describe how it works.
+
+\todo{Describe goal reservation: once an agent plans to a goal,
+that cell is reserved from the agent's arrival time onward.
+Other agents must route around it. Explain the trade-off vs
+unlimited future reservation (which caused deadlocks).}
+
+
+% ── 3.6 ─────────────────────────────────────────────────────────
+\section{Dynamic Replanning via the Integration Orchestrator}
+\label{sec:method_dynamic}
+
+% This section describes the key contribution of the integration:
+% the event-driven replanning loop that ties GCBBA + path planning
+% together in real time.
+
+
+% ── 3.6.1 ──────────────────────────────────────────────────────
+\subsection{Simulation Loop and Task Lifecycle}
+\label{subsec:method_loop}
+
+% Describe the per-timestep loop and the planned→executing→
+% completed task state machine.
+
+\todo{Describe the simulation step loop. Cover:
+  (1) GCBBA allocation at $t=0$;
+  (2) Per-timestep: agents execute one step along their paths;
+  (3) Task lifecycle: PLANNED $\to$ EXECUTING $\to$ COMPLETED;
+  (4) Path planning triggered by \texttt{needs\_new\_path} flag.}
+
+
+% ── 3.6.2 ──────────────────────────────────────────────────────
+\subsection{GCBBA Rerun Triggers}
+\label{subsec:method_triggers}
+
+% Describe the two trigger mechanisms:
+%   (a) Batch completion: enough tasks completed since last run
+%   (b) Stuck agent detection (replanning only, not full GCBBA)
+
+\todo{Describe event-driven triggers:
+  batch threshold $= \max(2, \lfloor \Na/3 \rfloor)$
+  tasks completed since last GCBBA run;
+  cooldown $= \max(3, \lfloor r_{\text{interval}}/3 \rfloor)$
+  timesteps between reruns to prevent thrashing.
+  Justify: why NOT every timestep? Why NOT fixed interval only?}
+
+
+% ── 3.6.3 ──────────────────────────────────────────────────────
+\subsection{Static vs.\ Dynamic GCBBA}
+\label{subsec:method_static_dynamic}
+
+% Define the two configurations you compare experimentally.
+
+\todo{Define:
+  \textbf{Static GCBBA}: allocation runs once at $t=0$,
+    \texttt{rerun\_interval} = $\infty$;
+  \textbf{Dynamic GCBBA}: allocation reruns on batch completion
+    events, \texttt{rerun\_interval} = 50 (canonical value).
+  Explain why static fails on disconnected graphs: agents
+  in isolated components receive no task assignments.}
+
+
+% ── 3.6.4 ──────────────────────────────────────────────────────
+\subsection{Stuck Agent Detection and Recovery}
+\label{subsec:method_stuck}
+
+% The stuck threshold mechanism and what it does (triggers path
+% replanning, not GCBBA rerun).
+
+\todo{Describe stuck detection: agent is stuck if
+  \texttt{position\_history[-stuck\_threshold:]} shows no movement
+  while not idle. Recovery: \texttt{needs\_new\_path = True}
+  triggers path replanning for that agent. Explain why this does
+  NOT trigger a full GCBBA rerun (computational cost vs benefit).}
+
+
+% ── 3.7 ─────────────────────────────────────────────────────────
+\section{Baseline Methods}
+\label{sec:method_baselines}
+
+% Brief descriptions of what SGA and CBBA do and how they are
+% implemented. The point is that all three methods share the same
+% collision avoidance pipeline -- ensuring fair comparison.
+
+\todo{Describe:
+  \textbf{SGA}: centralised sequential greedy; best agent-task pair
+    selected one at a time; runs independently per connected component
+    on disconnected graphs (generous to SGA -- acknowledge this);
+  \textbf{CBBA}: standard CBBA with local (not global) consensus;
+    no replanning (\texttt{rerun\_interval} = $\infty$).
+  Emphasise: all baselines share the same prioritised A* collision
+  avoidance pipeline, isolating task allocation as the variable.}
+
+
+% ── 3.8 ─────────────────────────────────────────────────────────
+\section{Design Decisions and Rationale}
+\label{sec:method_design}
+
+% A synthesis section that explicitly names the key design choices
+% and briefly justifies each. Helpful for your defence.
+
+\todo{List and justify key design decisions:
+  (1) Hybrid decentralised allocation / centralised path planning;
+  (2) Batch-threshold replanning trigger over fixed-interval;
+  (3) BFS distance tables over Euclidean distance;
+  (4) Max-component diameter for disconnected graphs;
+  (5) Goal reservation without unlimited future locking.}

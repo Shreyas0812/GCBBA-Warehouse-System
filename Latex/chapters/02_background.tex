@@ -1,0 +1,177 @@
+%% ============================================================
+%%  Chapter 2: Background and Related Work
+%% ============================================================
+\chapter{Background and Related Work}
+\label{chap:background}
+
+% GUIDANCE: 8--12 pages. Organise as a structured review, NOT a
+% list of paper summaries. Each section should end with a short
+% paragraph positioning your work relative to what was reviewed.
+% Write this chapter early -- it is largely independent of results.
+
+
+% ── 2.1 ─────────────────────────────────────────────────────────
+\section{Multi-Robot Task Allocation}
+\label{sec:bg_mrta}
+
+% Cover the taxonomy of MRTA: ST-SR-IA, MT-SR-IA, etc.
+% Ground the reader in why task allocation is NP-hard in general
+% and what approximate methods are used in practice.
+
+\todo{Introduce MRTA taxonomy. Cover: single-task vs multi-task
+robots, single-robot vs multi-robot tasks, instantaneous vs
+time-extended assignment. Cite the Gerkey and Mataric taxonomy.}
+
+
+% ── 2.1.1 ──────────────────────────────────────────────────────
+\subsection{Centralised Approaches}
+\label{subsec:bg_centralised}
+
+% Cover: Hungarian algorithm, ILP formulations, SGA.
+% Identify the scalability and single-point-of-failure problems
+% that motivate decentralised alternatives.
+
+\todo{Describe centralised MRTA: optimality, computational cost,
+fragility under communication failures. SGA as the relevant
+benchmark~\citep{kha2025enhancing}.}
+
+
+% ── 2.1.2 ──────────────────────────────────────────────────────
+\subsection{Decentralised Auction-Based Approaches}
+\label{subsec:bg_decentralised}
+
+% Core content: CBBA (Choi et al. 2009), its guarantees,
+% its limitations on non-fully-connected graphs.
+% Then: GCBBA (Kha et al. 2025) -- the three improvements:
+%   (1) RPT metric is DMG, (2) global consensus restores SGA
+%       convergence, (3) decentralised early convergence detection.
+
+\todo{Describe CBBA~\citep{choi2009consensus}: bundle building,
+conflict resolution, 50\% optimality under DMG. Then explain
+GCBBA~\citep{kha2025enhancing}: why CBBA fails to converge to SGA
+on disconnected graphs, and how GCBBA fixes this via global
+consensus. This is the foundational algorithm of your thesis.}
+
+
+% ── 2.1.3 ──────────────────────────────────────────────────────
+\subsection{Other Decentralised Methods}
+\label{subsec:bg_other_decentralised}
+
+% Brief coverage: market-based methods, DSA, MaxSum for DCOPs.
+% The point is to show you know the landscape, not to review
+% every paper.
+
+\todo{Brief survey of other decentralised approaches.
+Cite representative work. Conclude with why GCBBA is the
+most relevant starting point for your problem.}
+
+
+% ── 2.2 ─────────────────────────────────────────────────────────
+\section{Multi-Agent Path Finding}
+\label{sec:bg_mapf}
+
+% Cover: the MAPF problem definition, optimality, completeness.
+% Vertex and edge conflict definitions (critical for your work).
+
+\todo{Define MAPF formally. Cover completeness and optimality
+criteria. Introduce the distinction between offline (plan-then-
+execute) and online/lifelong MAPF.}
+
+
+% ── 2.2.1 ──────────────────────────────────────────────────────
+\subsection{Classical MAPF Solvers}
+\label{subsec:bg_mapf_classical}
+
+% CBS, A*, WHCA*. Focus on the trade-off between optimality
+% and computational cost that motivates prioritised planning.
+
+\todo{Cover CBS and variants briefly. Explain why optimal MAPF
+solvers are impractical for real-time warehouse settings.}
+
+
+% ── 2.2.2 ──────────────────────────────────────────────────────
+\subsection{Lifelong and Warehouse MAPF}
+\label{subsec:bg_mapf_lifelong}
+
+% Lifelong MAPF: tasks arrive over time, agents never stop.
+% This is the setting your system operates in.
+% Key reference: Lifelong Multi-Agent Path Finding in Large-Scale
+% Warehouses (Ma et al. / RHCR paper).
+
+\todo{Describe lifelong MAPF~\citep{li2021lifelong}.
+Discuss throughput as the relevant metric (not makespan per episode).
+Note how your problem differs: task allocation is also decentralised,
+not just path planning.}
+
+
+% ── 2.2.3 ──────────────────────────────────────────────────────
+\subsection{Prioritised Planning and Reservation Tables}
+\label{subsec:bg_prioritised}
+
+% Prioritised A* with space-time reservation tables: the approach
+% you actually implement. Cover: completeness trade-offs,
+% priority ordering, replanning triggers.
+
+\todo{Describe prioritised planning and time-based reservation
+tables. Explain the completeness caveat (not guaranteed with
+fixed priorities). Justify why it is appropriate for your
+real-time setting.}
+
+
+% ── 2.3 ─────────────────────────────────────────────────────────
+\section{Integrated Task Allocation and Path Planning}
+\label{sec:bg_integrated}
+
+% This section is where you identify the gap your thesis fills.
+% Most work treats allocation and path planning as separate problems.
+% Work that integrates them (DNA, DECNTR, Omni) is more relevant.
+
+\todo{Review papers that integrate task allocation with path
+planning: DNA~\citep{dna}, DECNTR~\citep{decntr},
+Omni~\citep{omni}. Identify the common gap: most assume static
+communication graphs or fully connected networks. Your work
+explicitly addresses dynamic, potentially disconnected graphs.}
+
+
+% ── 2.4 ─────────────────────────────────────────────────────────
+\section{Communication-Constrained Coordination}
+\label{sec:bg_communication}
+
+% Cover work that explicitly models limited communication.
+% Key point: most CBBA/GCBBA literature assumes the graph is given
+% and fixed. Dynamic communication graphs (proximity-based) are
+% less studied.
+
+\todo{Review literature on coordination under communication
+constraints. Discuss proximity-based communication graphs and
+their impact on algorithm performance. Identify what makes
+your dynamic replanning approach novel in this context.}
+
+
+% ── 2.5 ─────────────────────────────────────────────────────────
+\section{Warehouse Automation Systems}
+\label{sec:bg_warehouse}
+
+% Briefly ground the work in real warehouse systems (Kiva/Amazon,
+% Geek+, etc.) to establish practical relevance without over-claiming
+% industrial applicability.
+
+\todo{Brief section on warehouse automation: induct/eject station
+architecture, fleet management, why coordination failures
+(deadlocks, incomplete allocation) are costly. Keep to 1 page max.}
+
+
+% ── 2.6 ─────────────────────────────────────────────────────────
+\section{Positioning of This Work}
+\label{sec:bg_positioning}
+
+% A focused 1--2 paragraph synthesis that maps the gap in the
+% literature to exactly what your thesis contributes.
+% Refer back to your RQs from Chapter 1.
+
+\todo{Write a crisp positioning paragraph. The key claim:
+existing work either (a) integrates allocation and path planning
+but assumes full connectivity, or (b) handles disconnected graphs
+but only for static allocation. Your thesis combines both:
+dynamic GCBBA with event-driven replanning under arbitrary
+communication topology.}

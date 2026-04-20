@@ -1,0 +1,61 @@
+% ============================================================
+%  Abstract
+% ============================================================
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+Decentralized multi-robot task allocation (MRTA) methods such as
+CBBA~\cite{choi2009consensus} and its successor
+GCBBA~\cite{kha2025enhancing} assume fully connected or at least static
+communication graphs. These assumptions rarely hold in deployments where range-limited radios, obstacles, and robot mobility create dynamic, intermittently disconnected topologies.  This thesis presents the \textbf{Local Consensus-based Bundle Algorithm (LCBA)}, which extends GCBBA by replacing its global consensus requirement with local subgraph consensus.  LCBA relaxes three key assumptions of its predecessors:
+(1)~tasks need not be known \emph{a priori} - LCBA handles dynamic, steady-state arrivals via event-driven replanning;
+(2)~the communication graph may be arbitrarily disconnected -agents restrict consensus to their current connected component and resolve conflicts upon reconnection; and
+(3)~the communication topology may change at every timestep.
+
+LCBA is integrated with priority-based Time-Expanded~A* path planning, shared reservation tables for collision avoidance, and autonomous energy management, forming a complete multi-robot coordination pipeline.  The system is evaluated in a $30\!\times\!30$ gridworld warehouse simulation
+across 432~experimental runs against four baselines: static and dynamic variants of LCBA itself, CBBA, the centralized Sequential Greedy Algorithm~(SGA), and the state-of-the-art decentralized method DMCHBA~\cite{samiei2024dmchba}.
+
+% Results show that LCBA achieves approximately 0.80~tasks per timestep---near theoretical capacity---across all communication conditions, while CBBA and SGA collapse to 0.14 and 0.28 respectively under high load, representing a
+% 3--6$\times$ throughput gap.  LCBA's allocation time scales with power-law
+% exponents $k \approx 1.89$--$2.20$, compared to $k \approx 2.98$--$3.41$
+% for baselines, making it the only method that remains within a
+% one-second-per-timestep real-time budget.  Against DMCHBA, LCBA matches
+% throughput under full connectivity while maintaining operation on
+% disconnected graphs where DMCHBA cannot function.  Critically, LCBA
+% throughput remains flat from fully disconnected to fully connected
+% regimes---a robustness property no other tested method exhibits.
+
+[Para about results from all the maps]
+
+The results establish LCBA as the most robust decentralized allocation method across the full communication spectrum, with implications for warehouse automation, disaster response, and other domains where communication reliability cannot be guaranteed.
+
+
+% %% ============================================================
+% %%  Abstract
+% %% ============================================================
+% \chapter*{Abstract}
+% \addcontentsline{toc}{chapter}{Abstract}
+
+% % GUIDANCE: ~300 words. Cover: (1) problem and motivation, (2) approach,
+% % (3) key results, (4) significance. Write this last — once you know
+% % exactly what your results show.
+
+% \todo{Write abstract after results are in. Target: 300 words covering
+% problem, approach, key findings (completion rate at disconnected ranges,
+% sub-optimality ratio vs SGA), and significance for warehouse automation.}
+
+% The original problem was to solve multi agent assignment problems and come up with a framework which is kinda reproducable across seperate environemnts. I choose the warehouse environment because it was intuitvie to get the metrics to compare it in other use cases
+
+% LCBA, Local consensus based bundle algorithm extends GCBBA.. Global Concensus based bundle algorithm.... It basically has 3 major asumptions and we break down all of them... 
+
+% GCBBA Assumptions:
+% 1. Tasks are already known ... i.e. all the tasks are already known and we just do asssignment. We do it in steady state, i.e. tasks are added as time goes on
+
+% 2. There is a full communication graph. We break this down by giving tasks to the disconnected sub-graphs and tghen having a station where the agents "claim" the task so that one task is not taken by multiple agents. The necessity of having to move physical objects kinda helps us out in this case as they can either be no-started yet, in progress or completed and when the agents go to claim the said task, tehy know which one it is 
+
+% 3. Unchaning communication  graph... Solved this by having agents create a graph every timestep and update based onm GCBBA Rules at every step basiucally
+
+% We found that the LCBA basically works, more importantly works on weaker compute as well. It takes the advantage of a decentralized system and also has the advantage of never stopping 
+
+
+

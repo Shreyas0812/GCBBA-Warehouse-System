@@ -1,0 +1,125 @@
+%% ============================================================
+%%  Scalable Multi-Robot Coordination: Integrating GCBBA Task
+%%  Allocation with Decentralized Path Planning
+%%
+%%  Master of Science in Engineering Thesis
+%%  University of Pennsylvania, School of Engineering and Applied Science
+%%  Department of Electrical and Systems Engineering
+%%
+%%  Author : Shreyas [Last Name]
+%%  Advisor: [Advisor Name]
+%%  Date   : April 2026
+%% ============================================================
+
+\documentclass[12pt, oneside]{report}
+
+%% ── Page geometry ───────────────────────────────────────────────
+\usepackage[
+  top=1in, bottom=1in,
+  left=1.5in, right=1in   % wider left margin for binding
+]{geometry}
+
+%% ── Core packages ───────────────────────────────────────────────
+\usepackage{amsmath, amssymb, amsthm}   % math
+\usepackage{graphicx}                   % figures
+\usepackage{subcaption}                 % subfigures
+\usepackage{booktabs}                   % professional tables
+\usepackage{multirow}                   % table cells spanning rows
+\usepackage{array}                      % extended table formatting
+\usepackage{algorithm}                  % algorithm floats
+\usepackage{algpseudocode}              % pseudocode inside algorithms
+\usepackage{xcolor}                     % colors
+\usepackage{hyperref}                   % clickable links and cross-refs
+\usepackage{cleveref}                   % smart cross-referencing (Cref)
+\usepackage{natbib}                     % author-year or numbered citations
+\usepackage{setspace}                   % line spacing
+\usepackage{fancyhdr}                   % headers and footers
+\usepackage{tikz}                       % diagrams (optional)
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit}
+\usepackage{pgfplots}                   % plots directly in LaTeX (optional)
+\pgfplotsset{compat=1.18}
+\usepackage{enumitem}                   % better list control
+\usepackage[protrusion=true,expansion=true,tracking=true,kerning=true,spacing=true]{microtype} % better text justification
+\usepackage{lmodern}                    % better font rendering
+\usepackage[T1]{fontenc}
+
+%% ── Hyperref setup ──────────────────────────────────────────────
+\hypersetup{
+  colorlinks = true,
+  linkcolor  = black,
+  citecolor  = blue,
+  urlcolor   = blue,
+  pdftitle   = {Scalable Multi-Robot Coordination: Integrating GCBBA
+                Task Allocation with Decentralized Path Planning},
+  pdfauthor  = {Shreyas},
+}
+
+%% ── Line spacing (Penn typically requires double or 1.5) ────────
+\onehalfspacing
+
+%% ── Header / footer ─────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\nouppercase{\leftmark}}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+%% ── Theorem environments ────────────────────────────────────────
+\newtheorem{theorem}{Theorem}[chapter]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+%% ── Custom commands ─────────────────────────────────────────────
+\newcommand{\Na}{N_a}           % number of agents
+\newcommand{\Nt}{N_t}           % number of tasks
+\newcommand{\Lt}{L_t}           % capacity per agent
+\newcommand{\comm}{r_{\text{comm}}} % communication range
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+\newcommand{\note}[1]{\textcolor{blue}{\textit{[Note: #1]}}}
+
+%% ── Figure path ─────────────────────────────────────────────────
+\graphicspath{{figures/}}
+
+%% ============================================================
+\begin{document}
+
+%% ── Front matter ────────────────────────────────────────────────
+\pagenumbering{roman}
+\pagestyle{plain}
+
+\include{chapters/00_titlepage}
+\include{chapters/00_abstract}
+\include{chapters/00_acknowledgements}
+
+\tableofcontents
+\listoffigures
+\listoftables
+
+%% ── Main matter ─────────────────────────────────────────────────
+\cleardoublepage
+\pagenumbering{arabic}
+\pagestyle{fancy}
+
+\include{chapters/01_introduction}
+\include{chapters/02_background}
+\include{chapters/03_methodology}
+\include{chapters/04_experiments}
+\include{chapters/05_conclusion}
+
+%% ── Bibliography ────────────────────────────────────────────────
+\cleardoublepage
+\phantomsection
+\addcontentsline{toc}{chapter}{Bibliography}
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+%% ── Appendices (optional) ───────────────────────────────────────
+\appendix
+\include{chapters/appendix_a}
+
+\end{document}
