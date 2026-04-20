@@ -4,106 +4,210 @@
 \chapter{Introduction}
 \label{chap:introduction}
 
-% GUIDANCE: 4--6 pages. No results here. The goal is to:
-%   1. Motivate the problem compellingly
-%   2. State clearly what you built and why it matters
-%   3. Summarise contributions (bullet list is fine)
-%   4. Outline the rest of the thesis
-% Write this chapter second-to-last (after Chapter 3 is solid).
 
-
-% ── 1.1 ─────────────────────────────────────────────────────────
+%% ── 1.1 ─────────────────────────────────────────────────────────
 \section{Motivation}
 \label{sec:intro_motivation}
 
-% Start with the big picture: modern warehouse automation, the scale
-% of the coordination problem, and why it is hard.
-% Key tension to establish early: centralized approaches work well
-% but are fragile; decentralized approaches are robust but hard to
-% make efficient. Your work sits at this intersection.
+Modern warehouses operate at a scale that exceeds the reach of any centralised
+controller.
+Amazon's fulfilment centres deploy tens of thousands of drive units; Ocado's
+customer fulfilment centres run more than a thousand robots on a single grid
+floor.
+At peak throughput, each robot receives a new task within seconds of completing
+the last one, and a fleet of hundreds must navigate shared aisles without
+collision, without deadlock, and without leaving any induct station backlogged.
+The coordination problem is, at its core, a continuous assignment problem:
+which robot should pick up which item, in what order, along which path, and
+when should the decision be revised?
 
-\todo{Write motivation. Ground it in warehouse automation: order
-fulfilment scale, robot fleets, why coordination matters. Cite
-relevant industry context and prior work to establish stakes.}
+Two broad strategies have emerged for tackling this problem.
+\emph{Centralised} approaches gather all task and robot state at a single
+planner, compute a globally optimal assignment, and broadcast instructions to
+the fleet.
+These methods enjoy strong theoretical guarantees. The Sequential Greedy
+Algorithm~\cite{minoux1978accelerated} achieves at least half the optimal
+assignment value in polynomial time and their simulation-to-deployment gap
+is well understood.
+Their weaknesses, however, are equally well documented: a single coordinator
+represents a point of failure, scaling the coordinator's computation with fleet
+size is non-trivial, and the assumption of reliable broadcast communication
+is rarely met in real warehouses, where range-limited radios, metal shelving,
+and high robot density produce an intermittently connected network of links.
 
-LCBA, is basically based on the simple idea I had was... don't wait for everything to be perfect. Real world is stochastic. Unexpected situations are the norm and hence a decentralized system which can better account for this ever changing structure are an importatnt topic to discuss. 
+\emph{Decentralised} approaches distribute the coordination decision across
+the fleet.
+Each robot runs a local planning algorithm using only the information available
+within its communication neighbourhood, achieving resilience to node failures
+and communication outages at the cost of solution quality guarantees.
+The Consensus-Based Bundle Algorithm (CBBA)~\cite{choi2009consensus} and its
+global extension GCBBA~\cite{kha2025enhancing} represent the state of the art
+in this family: they provably converge to within $\frac{1}{2}$ of the optimal
+assignment on any \emph{connected} communication graph.
 
-Multi-robot task allocation matters in several scenarios where situations are stochastic. Warehouse logistics is the scencario chosen for this Thesis as it is possible to extract meaningful metrics for proving the use. Other scenarios which are not explored deeply but are still relevant to the discussin could be.... underwater robotics [Linking some papers here and talking about them] where GPS is non-existent. Space Robotics for similar reasons where communcation can drop off due to unforseen scenarios and cannot be reestablished. In which case the robot will still retain functionality. 
+The critical qualification of \emph{connected} is where both methods fall
+short of real-world requirements.
+In a warehouse with a physical communication range of 5--10 metres,
+robots spread across a 30-metre floor will frequently be in communication with
+only a subset of the fleet.
+When the communication graph fragments, CBBA and GCBBA may converge to
+conflicting assignments (multiple robots claiming the same task) or leave
+isolated robots idle.
+Neither method specifies a recovery protocol for reconnection events or for
+tasks that arrive while components are disconnected.
+The result is a performance cliff: as the communication range drops below
+the warehouse diameter, allocation quality degrades sharply or fails entirely.
 
-Disaster response is another scenario where all communication might break down or is delayed and disctributed processes such are LCBA which are robust and most imporatantly fast can prove to be crucial.
+This thesis develops the \textbf{Local Consensus-Based Bundle Algorithm
+(LCBA)}, which removes the connectivity assumption from GCBBA while preserving
+its convergence guarantees within each connected component and extending
+its correctness to dynamic, intermittently disconnected topologies.
+LCBA is integrated with a family of three collision-free path planning strategies
+to form a complete multi-robot coordination pipeline that can be evaluated
+across a wide range of operating conditions.
+
+The practical scope extends beyond warehouse automation.
+Underwater robotic surveys operate without GPS and with highly attenuated
+acoustic communication, producing exactly the intermittent connectivity
+structure that LCBA is designed to handle.
+Disaster-response scenarios where physical infrastructure is damaged and
+communication links are unreliable require decentralised coordination
+methods that continue to function even when large portions of the team are
+out of contact.
+Space-based robotic systems face communication delays and blackout periods
+that similarly preclude any centralised coordinator.
+While this thesis focuses on the warehouse setting (which provides a reliable
+set of measurable metrics and a reproducible simulation environment), the
+algorithm is designed with these broader application domains in mind.
 
 
-% ── 1.2 ─────────────────────────────────────────────────────────
+%% ── 1.2 ─────────────────────────────────────────────────────────
 \section{Problem Statement}
 \label{sec:intro_problem}
 
-% Be precise. Name the two sub-problems you solve:
-%   (a) Multi-robot task allocation under communication constraints
-%   (b) Collision-free path execution for allocated tasks
-% Identify the key challenge: communication graphs are dynamic and
-% may be disconnected, which breaks static allocation approaches.
+This thesis addresses two coupled sub-problems in a $30 \times 30$ gridworld
+warehouse environment populated by $\Na = 6$ mobile agents,
+$|\mathcal{S}^{\text{in}}| = 8$ induct stations, and
+$|\mathcal{S}^{\text{ej}}| = 38$ eject stations.
 
-\todo{Write a crisp 1--2 paragraph problem statement. Define the
-warehouse setting (30x30 grid, 6 robots, 8 induct stations,
-38 eject stations). Name the two problems explicitly.}
+\textbf{Sub-problem 1: Decentralised multi-robot task allocation under dynamic,
+intermittently disconnected communication graphs.}
+Tasks arrive continuously at induct stations over time, not as a fixed batch at
+$t = 0$.
+Agents communicate over a proximity-based wireless channel whose topology
+changes every timestep as agents move.
+The communication graph may be arbitrarily disconnected: in the worst case,
+each agent forms its own isolated component.
+The allocation method must correctly assign tasks, resolve conflicts, and
+reassign work as the topology changes. More importantly, it must operate
+using only information locally
+available within each agent's communication neighbourhood.
+Existing methods (CBBA, GCBBA, DMCHBA) break down or stall when the graph is
+persistently disconnected.
 
-The problem we are trying to solve is Decentralized Multi Robot Task allocation under intermittent/disconnected communcation graphs. Existing methods that we looked at either assume full connectivity or degrade cathastrophically when it is lost. 
+\textbf{Sub-problem 2: Collision-free execution of allocated tasks.}
+Once tasks are assigned, agents must navigate from their current positions to
+the assigned induct station, pick up the item, and deliver it to the assigned
+eject station, all without occupying the same grid cell as another agent at the
+same timestep.
+The path planning method must be computationally feasible within a per-timestep
+budget and must remain functional as the number of agents or the conflict
+density increases.
+
+The two sub-problems are coupled: travel-time estimates used in the allocation
+algorithm depend on the paths that agents will follow, which in turn depend on
+the decisions of other agents.
+A practical system must handle this coupling through event-driven replanning
+rather than by solving the joint problem exactly.
 
 
-
-
-% ── 1.3 ─────────────────────────────────────────────────────────
+%% ── 1.3 ─────────────────────────────────────────────────────────
 \section{Research Questions}
 \label{sec:intro_questions}
 
-% Frame these as testable questions your experiments will answer.
-% Suggested:
-%   RQ1: Can dynamic GCBBA achieve task completion under communication
-%        conditions where static allocation fails entirely?
-%   RQ2: How close to optimal (SGA) does GCBBA perform across varying
-%        communication connectivity?
-%   RQ3: How does replanning frequency (rerun interval) affect
-%        performance and computational overhead?
+The thesis investigates three research questions:
 
-\todo{State 2--3 focused research questions.}
+\begin{description}
+  \item[\textbf{RQ1.}] Can LCBA maintain task throughput under communication
+    conditions where static allocation fails?
+    Specifically, does event-driven replanning allow LCBA to complete tasks
+    even when the communication graph is persistently disconnected, and by how
+    much does it outperform CBBA, SGA, and DMCHBA at low communication ranges?
+
+  \item[\textbf{RQ2.}] How close to optimal (SGA) does LCBA perform as
+    communication connectivity varies?
+    On connected graphs where SGA is a valid reference, what is the
+    sub-optimality ratio of LCBA, and does it remain within the theoretical
+    $\frac{1}{2}$-optimality bound?
+
+  \item[\textbf{RQ3.}] How do alternative path planning strategies affect
+    system throughput, task wait time, and computational overhead?
+    Is there a single planner that dominates across all operating conditions,
+    or does the optimal choice depend on task load and agent count?
+\end{description}
 
 
-% ── 1.4 ─────────────────────────────────────────────────────────
+%% ── 1.4 ─────────────────────────────────────────────────────────
 \section{Contributions}
 \label{sec:intro_contributions}
 
-% Be concrete. Do not oversell. Suggested framing:
+This thesis makes the following contributions:
 
-\todo{Write contributions list. Suggested:
-(1) Integration of GCBBA with prioritised A* collision avoidance
-    in a hybrid decentralised/centralised architecture;
-(2) Event-driven dynamic replanning that achieves graceful
-    degradation under communication failures;
-(3) Empirical validation showing 100\% task completion at
-    disconnected ranges where static and CBBA baselines fail;
-(4) Sub-optimality analysis demonstrating near-SGA performance
-    on connected graphs.}
+\begin{enumerate}
+  \item \textbf{The Local Consensus-Based Bundle Algorithm (LCBA).}
+        LCBA extends GCBBA to handle three challenges that GCBBA and CBBA
+        cannot:
+        (a) dynamic, online task arrivals via event-driven replanning;
+        (b) arbitrarily disconnected communication graphs by restricting
+            consensus to each connected component and resolving conflicts
+            upon reconnection; and
+        (c) dynamically changing communication topology by reconstructing
+            the graph at every timestep.
+        On connected components, LCBA inherits GCBBA's convergence to the SGA
+        solution and the associated $\frac{1}{2}$-optimality guarantee.
 
-Integration of GHCBBA with intermittently connected graphs and expanding the view from the one of one timestep to as a system which can simulataneously maintatin some guaranteees from GCBBA while also being robust and quick enought to get the tasks done in time. 
+  \item \textbf{A hybrid, modular coordination pipeline.}
+        LCBA is integrated with three interchangeable path planning strategies
+        (Cooperative A*, Priority-Based Search, and Rolling Horizon Collision
+        Resolution) within a single orchestration framework.
+        The modular design allows the allocation and path planning components
+        to be studied independently.
 
-If GCBBA can converge to a 50 percent optimal solution, so can LCBA given an adept number of iterations to reach the same in the overall system view sense. 
+  \item \textbf{A dual-mode warehouse simulation.}
+        The simulation supports both a \emph{batch mode} (fixed task set,
+        makespan objective) for comparison with prior work, and a
+        \emph{steady-state mode} (continuous task arrivals, throughput
+        objective) that better reflects the infinite-horizon operation of
+        real warehouse systems.
+        Both modes share the same environment, agents, and infrastructure,
+        enabling direct comparison.
+
+  \item \textbf{Empirical evaluation across 432+ experimental runs.}
+        The system is evaluated across a full factorial sweep of communication
+        range (6 values from fully isolated to fully connected),
+        task arrival rate (12 values from light load to extreme saturation),
+        path planner (3 variants), and allocation method (LCBA, CBBA, SGA, DMCHBA),
+        across six environments ranging from 6 to 200 agents.
+        This scale of evaluation provides statistical confidence in the results
+        and reveals the interaction effects between communication conditions
+        and planning strategy.
+\end{enumerate}
 
 
-% ── 1.5 ─────────────────────────────────────────────────────────
+%% ── 1.5 ─────────────────────────────────────────────────────────
 \section{Thesis Outline}
 \label{sec:intro_outline}
 
-% One short paragraph per chapter explaining what it covers.
-
 The remainder of this thesis is organised as follows.
-\Cref{chap:background} reviews related work in multi-robot task
-allocation, decentralised coordination, and multi-agent path
-finding.
-\Cref{chap:methodology} describes the system architecture,
-the GCBBA algorithm and its warehouse adaptation, the
-collision avoidance pipeline, and the dynamic replanning mechanism.
-\Cref{chap:experiments} presents the experimental setup,
-baselines, and quantitative results across varying communication
-ranges and task loads.
-\Cref{chap:conclusion} discusses the findings, limitations, and
+\Cref{chap:background} reviews related work in multi-robot task allocation,
+multi-agent path finding, communication-constrained coordination, and warehouse
+automation, and identifies the specific gap this thesis fills.
+\Cref{chap:methodology} describes the system architecture, the LCBA algorithm
+and its warehouse adaptation, the three path planning strategies, the dynamic
+replanning mechanism, and the baseline methods.
+\Cref{chap:experiments} presents the experimental setup (including the dual
+batch/steady-state design), defines all metrics, and reports quantitative
+results across the full parameter sweep.
+\Cref{chap:conclusion} summarises the findings, revisits the contributions
+in light of the experimental evidence, discusses limitations, and outlines
 directions for future work.
