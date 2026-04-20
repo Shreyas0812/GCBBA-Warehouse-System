@@ -4,174 +4,423 @@
 \chapter{Background and Related Work}
 \label{chap:background}
 
-% GUIDANCE: 8--12 pages. Organise as a structured review, NOT a
-% list of paper summaries. Each section should end with a short
-% paragraph positioning your work relative to what was reviewed.
-% Write this chapter early -- it is largely independent of results.
+This chapter reviews the literature relevant to the two core problems addressed
+in this thesis: multi-robot task allocation (Section~\ref{sec:bg_mrta}) and
+multi-agent path finding (Section~\ref{sec:bg_mapf}).
+Section~\ref{sec:bg_integrated} covers work that attempts to integrate the two,
+Section~\ref{sec:bg_communication} reviews coordination under communication
+constraints, and Section~\ref{sec:bg_warehouse} situates the work in the
+context of warehouse automation.
+Section~\ref{sec:bg_positioning} identifies the specific gap that this thesis
+fills.
 
 
-% ── 2.1 ─────────────────────────────────────────────────────────
+%% ── 2.1 ─────────────────────────────────────────────────────────
 \section{Multi-Robot Task Allocation}
 \label{sec:bg_mrta}
 
-% Cover the taxonomy of MRTA: ST-SR-IA, MT-SR-IA, etc.
-% Ground the reader in why task allocation is NP-hard in general
-% and what approximate methods are used in practice.
+Multi-robot task allocation (MRTA) is the problem of deciding which robot
+performs which task, and in what order, so as to optimise a system-level
+objective such as makespan, total distance, or throughput.
+The canonical taxonomy of \citet{gerkey2004formal} classifies MRTA problems
+along three axes: \emph{single-task} (ST) versus \emph{multi-task} (MT) robots,
+\emph{single-robot} (SR) versus \emph{multi-robot} (MR) tasks, and
+\emph{instantaneous assignment} (IA) versus \emph{time-extended assignment}
+(TA).
+The warehouse problem studied in this thesis is an ST-SR-TA instance: each
+robot handles one task at a time, each task requires exactly one robot, but
+assignments evolve over time as new tasks arrive.
 
-\todo{Introduce MRTA taxonomy. Cover: single-task vs multi-task
-robots, single-robot vs multi-robot tasks, instantaneous vs
-time-extended assignment. Cite the Gerkey and Mataric taxonomy.}
+In its most general form, MRTA is NP-hard, even for single-task
+robots~\cite{gerkey2004formal}.
+Practical systems therefore rely either on polynomial-time approximation
+algorithms with bounded sub-optimality, or on heuristic methods that sacrifice
+formal guarantees for scalability.
+The choice between centralised and decentralised architectures
+(Sections~\ref{subsec:bg_centralised} and~\ref{subsec:bg_decentralised})
+is the primary design tension.
 
 
-% ── 2.1.1 ──────────────────────────────────────────────────────
+%% ── 2.1.1 ──────────────────────────────────────────────────────
 \subsection{Centralised Approaches}
 \label{subsec:bg_centralised}
 
-% Cover: Hungarian algorithm, ILP formulations, SGA.
-% Identify the scalability and single-point-of-failure problems
-% that motivate decentralised alternatives.
+Centralised MRTA methods aggregate all information at a single planner that
+computes assignments for all the agents.
+The classical assignment problem (minimise total cost for a one-to-one
+agent-task matching) can be solved optimally in $O(n^3)$ time by the Hungarian
+algorithm~\cite{kuhn1955hungarian}.
+When tasks can be assigned in any order and multiple tasks may be assigned to
+each agent, integer linear programming (ILP) formulations achieve global
+optimality but at exponential worst-case cost, rendering them impractical
+for large fleets or real-time settings.
 
-\todo{Describe centralised MRTA: optimality, computational cost,
-fragility under communication failures. SGA as the relevant
-benchmark~\citep{kha2025enhancing}.}
+A widely used polynomial-time alternative is the \emph{Sequential Greedy
+Algorithm} (SGA)~\cite{minoux1978accelerated}: at each step, the algorithm
+selects the (agent, task) pair that offers the greatest marginal gain, assigns
+the task, and repeats until no more beneficial assignments remain.
+Under utility functions that satisfy the \emph{Diminishing Marginal Gain}
+(DMG) property~\cite{fisher1978analysis}, SGA achieves at least half the
+optimal assignment value.
+This guarantee is tight: there exist instances where SGA achieves exactly
+$\frac{1}{2}$ of the optimum.
+
+Centralised methods share two practical weaknesses.
+First, they assume that all task and agent information is available at a single
+point, which requires either a reliable broadcast channel or a dedicated
+coordinator robot.
+Both assumptions are fragile in the field: communication failures can prevent
+the coordinator from learning about new tasks or updated agent states.
+Second, single-point-of-failure: if the coordinator fails, the entire system
+halts.
+These limitations motivate the decentralised alternatives described next.
 
 
-% ── 2.1.2 ──────────────────────────────────────────────────────
+%% ── 2.1.2 ──────────────────────────────────────────────────────
 \subsection{Decentralised Auction-Based Approaches}
 \label{subsec:bg_decentralised}
 
-% Core content: CBBA (Choi et al. 2009), its guarantees,
-% its limitations on non-fully-connected graphs.
-% Then: GCBBA (Kha et al. 2025) -- the three improvements:
-%   (1) RPT metric is DMG, (2) global consensus restores SGA
-%       convergence, (3) decentralised early convergence detection.
+Auction-based methods distribute the allocation decision by having agents bid
+on tasks and resolve conflicts through a shared consensus protocol.
+\citet{gerkey2002sold} and \citet{dias2006market} provide early surveys of
+market-based multi-robot coordination, establishing the framework in which
+agents bid monetary values on tasks and the highest bidder is awarded the task.
+While intuitive, early market-based approaches offered few formal guarantees
+on solution quality.
 
-\todo{Describe CBBA~\citep{choi2009consensus}: bundle building,
-conflict resolution, 50\% optimality under DMG. Then explain
-GCBBA~\citep{kha2025enhancing}: why CBBA fails to converge to SGA
-on disconnected graphs, and how GCBBA fixes this via global
-consensus. This is the foundational algorithm of your thesis.}
+The \emph{Consensus-Based Bundle Algorithm} (CBBA)~\cite{choi2009consensus}
+introduced a principled framework that combines greedy bundle building with
+a pairwise conflict resolution protocol.
+Each agent independently builds a bundle of tasks it would like to execute,
+computing bids based on the marginal gain of adding each task to its current
+plan.
+When agents communicate, they exchange bid and winner vectors and apply a set
+of update/reset/leave rules to resolve conflicts.
+\citeauthor{choi2009consensus} prove that CBBA converges to a valid
+conflict-free assignment (no task assigned to more than one agent) on any
+connected graph, and that the assignment achieves at least
+$\frac{1}{2}$-optimality under DMG utilities.
+
+CBBA's key limitation is its \emph{local} consensus protocol: each agent
+communicates only with its immediate neighbours, and a single round of exchange
+is performed per iteration.
+On a graph of diameter $D > 1$, information originating at one node takes $D$
+rounds to reach all other nodes.
+If agents act on stale information before consensus is reached, conflicting
+assignments can persist, and CBBA may converge to an assignment that is not
+equivalent to the SGA solution~\cite{kha2025enhancing}.
+
+The \emph{Global Consensus-Based Bundle Algorithm}
+(GCBBA)~\cite{kha2025enhancing} corrects this deficiency by performing $2D$
+consensus rounds per iteration, where $D$ is the communication graph diameter.
+GCBBA also introduces the \emph{Repeated Path Times} (RPT) utility function,
+which is provably DMG and better aligned with makespan minimisation than the
+simple travel-time utility used in CBBA.
+Together, these changes allow GCBBA to provably converge to the SGA solution
+on any connected graph and with any DMG utility function, while retaining the
+decentralised character of CBBA.
+
+GCBBA remains the starting point for this thesis; its handling of disconnected
+graphs and dynamic task arrivals is the extension that LCBA provides.
 
 
-% ── 2.1.3 ──────────────────────────────────────────────────────
+%% ── 2.1.3 ──────────────────────────────────────────────────────
 \subsection{Other Decentralised Methods}
 \label{subsec:bg_other_decentralised}
 
-% Brief coverage: market-based methods, DSA, MaxSum for DCOPs.
-% The point is to show you know the landscape, not to review
-% every paper.
+Beyond auction-based methods, several other decentralised approaches have been
+proposed for MRTA.
+\emph{Distributed Constraint Optimisation Problems} (DCOPs) formulate task
+allocation as a distributed optimisation over coupled agent variables;
+algorithms such as Max-Sum and DPOP achieve variable quality-runtime trade-offs
+but do not scale well to large numbers of tasks~\cite{chakraa2023optimization}.
+\emph{Market-based methods}~\cite{quinton2023mrta} use explicit price dynamics
+to drive convergence, offering flexibility at the cost of unpredictable
+convergence time.
+\emph{Behaviour-based methods}~\cite{parker1998alliance} allocate tasks
+through emergent competition and reinforcement, with robustness to failures
+but without assignment quality guarantees.
 
-\todo{Brief survey of other decentralised approaches.
-Cite representative work. Conclude with why GCBBA is the
-most relevant starting point for your problem.}
+The most relevant recent competitor is the \emph{Distributed Matching by Clone
+Hungarian-Based Algorithm} (DMCHBA)~\cite{samiei2024dmchba}, which extends
+distributed Hungarian matching to multi-robot settings.
+DMCHBA achieves strong empirical performance and provides theoretical
+guarantees on connected graphs, making it a natural state-of-the-art
+baseline for this thesis.
+Like CBBA and GCBBA, DMCHBA assumes graph connectivity during each allocation
+call.
+
+The common thread across all existing decentralised methods is the assumption
+of a \emph{connected} communication graph, at least at the time of allocation.
+None of the methods reviewed explicitly handle the case where the graph is
+persistently or intermittently disconnected across multiple replanning events.
+This gap motivates the LCBA design.
 
 
-% ── 2.2 ─────────────────────────────────────────────────────────
+%% ── 2.2 ─────────────────────────────────────────────────────────
 \section{Multi-Agent Path Finding}
 \label{sec:bg_mapf}
 
-% Cover: the MAPF problem definition, optimality, completeness.
-% Vertex and edge conflict definitions (critical for your work).
+Multi-agent path finding (MAPF) is the problem of computing collision-free
+paths for a team of agents from their respective start positions to their goal
+positions on a shared graph~\cite{stern2019mapf}.
+Formally, a \emph{vertex conflict} occurs when two agents occupy the same node
+at the same timestep; an \emph{edge conflict} (or swap conflict) occurs when
+two agents traverse the same edge in opposite directions within the same
+timestep.
+A solution is \emph{valid} if it contains no conflicts.
 
-\todo{Define MAPF formally. Cover completeness and optimality
-criteria. Introduce the distinction between offline (plan-then-
-execute) and online/lifelong MAPF.}
+MAPF is NP-hard to solve optimally~\cite{stern2019mapf}, even for the simplest
+cost function (sum of individual path lengths).
+Practical approaches therefore trade off optimality against runtime, and the
+appropriate trade-off depends heavily on the application: an offline warehouse
+layout tool can afford hours of computation for an optimal solution, while an
+online robot coordination system must plan within milliseconds per timestep.
 
 
-% ── 2.2.1 ──────────────────────────────────────────────────────
+%% ── 2.2.1 ──────────────────────────────────────────────────────
 \subsection{Classical MAPF Solvers}
 \label{subsec:bg_mapf_classical}
 
-% CBS, A*, WHCA*. Focus on the trade-off between optimality
-% and computational cost that motivates prioritised planning.
+\emph{Conflict-Based Search} (CBS)~\cite{sharon2015conflict} is the
+most influential optimal MAPF solver.
+CBS operates at two levels: a high-level constraint tree (CT) that branches
+on conflicts, and a low-level A* that plans each agent's path subject to
+accumulated constraints.
+CBS is complete and optimal with respect to sum-of-costs and has excellent
+average-case performance, though its worst-case complexity is exponential in
+the number of conflicts.
+CBS remains the algorithm of choice when optimal solutions are needed and
+agent counts are small ($n \lesssim 20$ in warehouse grids).
 
-\todo{Cover CBS and variants briefly. Explain why optimal MAPF
-solvers are impractical for real-time warehouse settings.}
+\emph{Windowed Hierarchical Cooperative A*}
+(WHCA*)~\cite{silver2005cooperative} is an early suboptimal MAPF method that
+applies cooperative A* within a fixed-size time window.
+By planning only $w$ timesteps ahead, WHCA* avoids the long-horizon complexity
+of full MAPF at the cost of potentially suboptimal paths near the window
+boundary.
+This idea is formalised and extended by the rolling horizon approach described
+in Section~\ref{subsec:bg_mapf_lifelong}.
+
+All A*-based planners share the same admissible heuristic: the shortest
+single-agent path from the current cell to the goal, ignoring other
+agents~\cite{hart1968astar}.
+This heuristic is consistent, ensuring that A* explores nodes in non-decreasing
+order of $f$-value and does not revisit nodes.
 
 
-% ── 2.2.2 ──────────────────────────────────────────────────────
+%% ── 2.2.2 ──────────────────────────────────────────────────────
 \subsection{Lifelong and Warehouse MAPF}
 \label{subsec:bg_mapf_lifelong}
 
-% Lifelong MAPF: tasks arrive over time, agents never stop.
-% This is the setting your system operates in.
-% Key reference: Lifelong Multi-Agent Path Finding in Large-Scale
-% Warehouses (Ma et al. / RHCR paper).
+\emph{Lifelong MAPF}~\cite{li2021lifelong} extends the classical formulation to
+settings where agents are never idle: upon completing one goal, each agent is
+immediately assigned a new one.
+This is the relevant formulation for warehouse automation, where robots
+continuously cycle between induct and eject stations.
+In the lifelong setting, the natural objective is \emph{throughput} i.e.,
+the average number of tasks completed per timestep at steady state(as opposed to 
+makespan for a fixed task batch.)
 
-\todo{Describe lifelong MAPF~\citep{li2021lifelong}.
-Discuss throughput as the relevant metric (not makespan per episode).
-Note how your problem differs: task allocation is also decentralised,
-not just path planning.}
+\citet{li2021lifelong} introduce \emph{Rolling Horizon Collision Resolution}
+(RHCR) for the lifelong MAPF setting in large warehouses.
+RHCR restricts each planning call to a time window of size $w$ and uses
+cooperative A* as the inner solver, achieving near-optimal throughput with
+computational cost that scales with the window size rather than the total
+mission horizon.
+RHCR is one of the six planning strategies evaluated in this thesis
+(Section~\ref{subsec:method_rhcr}).
+
+A key design insight from \citet{li2021lifelong} is that optimising for
+throughput requires different priority rules than optimising for makespan.
+In particular, agents that are stuck or far from their goals should receive
+\emph{higher} planning priority to prevent them from blocking high-throughput
+agents near their goals.
+This insight informs the priority ordering used in the CA* and PBS planners
+in this thesis.
 
 
-% ── 2.2.3 ──────────────────────────────────────────────────────
+%% ── 2.2.3 ──────────────────────────────────────────────────────
 \subsection{Prioritised Planning and Reservation Tables}
 \label{subsec:bg_prioritised}
 
-% Prioritised A* with space-time reservation tables: the approach
-% you actually implement. Cover: completeness trade-offs,
-% priority ordering, replanning triggers.
+Prioritised planning~\cite{silver2005cooperative} decomposes the joint MAPF
+problem into a sequence of single-agent problems.
+Agents are assigned a priority order; the highest-priority agent plans its
+optimal path first, and each subsequent agent plans a collision-free path
+around all higher-priority agents' reservations.
 
-\todo{Describe prioritised planning and time-based reservation
-tables. Explain the completeness caveat (not guaranteed with
-fixed priorities). Justify why it is appropriate for your
-real-time setting.}
+The \emph{reservation table} (also called a space-time reservation table)
+stores the space-time positions committed by already-planned agents.
+When planning agent $i$'s path, the planner searches the space-time graph
+with the reservation table treated as a set of obstacles.
+
+Prioritised planning is not complete in general: a fixed priority ordering can
+create situations where the lowest-priority agent cannot reach its goal because
+all routes are permanently blocked by higher-priority agents.
+However, \citet{silver2005cooperative} show that on grid graphs without
+symmetry constraints, random priority orderings produce very few deadlocks in
+practice.
+The stuck-detection mechanism in LCBA (Section~\ref{subsec:method_stuck})
+provides a practical recovery path for the rare cases where deadlocks do occur.
+
+\emph{Priority Inheritance with Backtracking} (PIBT)~\cite{okumura2019pibt}
+is a reactive variant of prioritised planning that makes greedy decisions
+one timestep at a time rather than planning full paths.
+Its scalability to large agent counts ($n > 100$) makes it an attractive option
+when computational resources are limited, at the cost of providing no
+long-horizon path quality guarantee.
 
 
-% ── 2.3 ─────────────────────────────────────────────────────────
+%% ── 2.3 ─────────────────────────────────────────────────────────
 \section{Integrated Task Allocation and Path Planning}
 \label{sec:bg_integrated}
 
-% This section is where you identify the gap your thesis fills.
-% Most work treats allocation and path planning as separate problems.
-% Work that integrates them (DNA, DECNTR, Omni) is more relevant.
+Most MRTA and MAPF research treats the two problems separately.
+MRTA methods typically assume that travel times are deterministic and that
+paths can always be executed without collision; MAPF methods typically assume
+that goals are given and fixed.
+In a real multi-robot system, these assumptions are mutually incompatible:
+the travel time between two points depends on the paths of other agents (which
+in turn depend on their task assignments), and task assignments should account
+for the time costs imposed by conflict avoidance.
 
-\todo{Review papers that integrate task allocation with path
-planning: DNA~\citep{dna}, DECNTR~\citep{decntr},
-Omni~\citep{omni}. Identify the common gap: most assume static
-communication graphs or fully connected networks. Your work
-explicitly addresses dynamic, potentially disconnected graphs.}
+Tightly integrated approaches, specifically those that solve allocation and path planning
+jointly, exist but are computationally demanding.
+A small number of works address this integration in the decentralised setting.
+\citet{otte2020auctions} study auction-based coordination in communication-limited
+environments, but focus on assignment convergence rather than the path planning
+layer.
+\citet{buckman2019partial} propose partial replanning strategies for dynamic
+task allocation, showing that selective replanning of a subset of agents'
+paths reduces overhead while maintaining allocation quality.
+\citet{chen2021cbbalr} combine CBBA with local path replanning for UAV swarms,
+demonstrating that reactive path updates can compensate for stale global plans.
+
+All of these approaches share a key simplifying assumption: the communication
+graph is either fully connected at all times, or at most mildly sparse.
+None explicitly model the scenario where the graph is \emph{persistently
+disconnected} across multiple allocation cycles, as arises when the physical
+communication range is shorter than the warehouse diameter.
+This thesis addresses exactly this case, combining LCBA allocation
+with three interchangeable path planners in a single integrated pipeline.
 
 
-% ── 2.4 ─────────────────────────────────────────────────────────
+%% ── 2.4 ─────────────────────────────────────────────────────────
 \section{Communication-Constrained Coordination}
 \label{sec:bg_communication}
 
-% Cover work that explicitly models limited communication.
-% Key point: most CBBA/GCBBA literature assumes the graph is given
-% and fixed. Dynamic communication graphs (proximity-based) are
-% less studied.
+Communication constraints are a recognised challenge in multi-robot systems.
+\citet{parker1998alliance} showed that fault-tolerant behaviour can emerge from
+reactive architectures even without reliable inter-robot communication.
+More recently, the MRTA community has studied coordination when communication
+is range-limited or intermittent.
 
-\todo{Review literature on coordination under communication
-constraints. Discuss proximity-based communication graphs and
-their impact on algorithm performance. Identify what makes
-your dynamic replanning approach novel in this context.}
+\citet{otte2020auctions} analyse auction-based allocation under bandwidth and
+range constraints, demonstrating that local auctions can converge to near-global
+optima when the communication graph changes slowly.
+CBBA was specifically designed for range-limited radios~\cite{choi2009consensus}:
+its pairwise consensus protocol requires only one-hop communication and can
+operate on any connected graph.
+However, CBBA's convergence guarantee breaks down when the graph becomes
+disconnected during a consensus round: agents in isolated components may
+converge to conflicting assignments that cannot be resolved upon reconnection.
+
+GCBBA~\cite{kha2025enhancing} partially addresses this by noting that
+consensus within a connected component is still valid.
+However, the original GCBBA formulation does not specify a protocol for
+handling reconnection events or for task arrivals that occur during a period
+of disconnection.
+These gaps are precisely what LCBA fills: by treating each connected component
+as an independent allocation instance and triggering reallocation upon topology
+changes, LCBA maintains correctness and forward progress regardless of
+communication conditions.
+
+The proximity-based communication model used in this thesis is relatively straightforward:
+an edge between
+agents $i$ and $k$ if and only if their Euclidean distance is at most $\comm$.
+ This is a standard abstraction for range-limited radios and is well-suited to
+the warehouse grid environment where agents can estimate distances from
+grid coordinates.
+This model produces graphs that change every timestep as agents move, creating
+a highly dynamic topology that no existing MRTA method is explicitly designed
+to handle.
 
 
-% ── 2.5 ─────────────────────────────────────────────────────────
+%% ── 2.5 ─────────────────────────────────────────────────────────
 \section{Warehouse Automation Systems}
 \label{sec:bg_warehouse}
 
-% Briefly ground the work in real warehouse systems (Kiva/Amazon,
-% Geek+, etc.) to establish practical relevance without over-claiming
-% industrial applicability.
+Automated warehouse systems have grown dramatically in scale and complexity
+over the past two decades.
+The Kiva (now Amazon Robotics) system~\cite{wurman2008coordinating} operates
+hundreds of drive units on a shared floor, moving shelves to human pickers.
+The coordination challenge in such systems is substantial: at peak throughput,
+robots must navigate dense environments without collision while continuously
+receiving new delivery targets.
 
-\todo{Brief section on warehouse automation: induct/eject station
-architecture, fleet management, why coordination failures
-(deadlocks, incomplete allocation) are costly. Keep to 1 page max.}
+Modern warehouse systems are characterised by the \emph{induct--eject}
+architecture studied in this thesis: items arrive at a set of induct stations
+(conveyor endpoints, receiving docks), are assigned to agents, transported
+across the warehouse, and deposited at eject stations (shipping chutes, packing
+stations).
+Throughput (items processed per unit time) is the dominant performance
+metric; makespan is relevant only for finite-batch planning horizons.
+
+The coordination challenges specific to this architecture are well-documented
+in the lifelong MAPF literature~\cite{li2021lifelong}.
+Deadlocks arise when agents block each other at narrow corridor junctions;
+live-lock conditions arise when agents repeatedly defer to each other without
+making progress.
+Task imbalance defined as some agents receiving disproportionately many or few tasks
+degrades throughput and energy efficiency.
+These are precisely the failure modes that the allocation and path planning
+components of LCBA are designed to avoid.
+
+For the purposes of this thesis, the warehouse is modelled as a discrete grid
+with fixed station positions.
+While real warehouses are larger and have more complex layouts, the $30 \times
+30$ grid used here captures the essential structural features (aisle corridors,
+station clusters) while remaining computationally tractable for extensive
+parameter sweeps.
+Generalisation to larger grids is discussed as a direction for future work in
+Chapter~\ref{chap:conclusion}.
 
 
-% ── 2.6 ─────────────────────────────────────────────────────────
+%% ── 2.6 ─────────────────────────────────────────────────────────
 \section{Positioning of This Work}
 \label{sec:bg_positioning}
 
-% A focused 1--2 paragraph synthesis that maps the gap in the
-% literature to exactly what your thesis contributes.
-% Refer back to your RQs from Chapter 1.
+The review above identifies two partially overlapping lines of work: methods
+that integrate task allocation with path planning but assume connected
+communication graphs, and methods that handle communication constraints but
+treat path planning as a separate concern.
+As per our review, no existing work simultaneously addresses all three features that the warehouse
+setting demands:
 
-\todo{Write a crisp positioning paragraph. The key claim:
-existing work either (a) integrates allocation and path planning
-but assumes full connectivity, or (b) handles disconnected graphs
-but only for static allocation. Your thesis combines both:
-dynamic GCBBA with event-driven replanning under arbitrary
-communication topology.}
+\begin{enumerate}
+  \item \textbf{Dynamic task arrivals.}
+        Tasks arrive online during the mission rather than being given as a
+        fixed batch at $t = 0$.
+        This requires event-driven replanning rather than a single allocation
+        call.
+  \item \textbf{Persistently disconnected communication.}
+        The proximity-based communication model produces graphs that may be
+        disconnected for sustained periods as robots spread across the warehouse.
+        Existing decentralised methods (CBBA, GCBBA, DMCHBA) break down or
+        stall when components are isolated.
+  \item \textbf{Multiple, interchangeable path planners.}
+        Different deployment scenarios (small fleets vs.\ large fleets,
+        low-compute hardware vs.\ edge servers) call for different planning
+        strategies.
+        No existing integrated system provides a modular, planner-agnostic
+        allocation layer.
+\end{enumerate}
+
+This thesis addresses all three gaps through the LCBA algorithm and its
+integration with three path planning modules.
+LCBA inherits the $\frac{1}{2}$-optimality guarantee and convergence properties
+of GCBBA/SGA on connected components, while extending correctness guarantees to
+disconnected and dynamically changing topologies.
+The empirical evaluation in Chapter~\ref{chap:experiments} quantifies the
+benefit of these extensions relative to each of the four baseline methods.
