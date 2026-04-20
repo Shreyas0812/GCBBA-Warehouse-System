@@ -58,7 +58,7 @@ def get_experiment_configs(
     QUEUE_MAX_DEPTH = 10
     WARMUP_TIMESTEPS = 300
     ALLOCATION_TIMEOUT_S = 10.0
-    WALL_CLOCK_LIMIT_S = 600.0
+    WALL_CLOCK_LIMIT_S = 1800.0
 
     SS_MAX_TIMESTEPS = 1500
     SS_INITIAL_TASKS = 2 * num_agents
