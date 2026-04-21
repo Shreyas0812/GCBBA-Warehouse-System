@@ -134,16 +134,40 @@ paths and triggers replanning events as needed.
 \section{Warehouse Environment}
 \label{sec:method_environment}
 
-All experiments use a $30 \times 30$ gridworld warehouse, depicted in
-Figure~\ref{fig:gridworld}.
-The environment contains $\Na = 6$ agents,
-$|\mathcal{S}^{\text{in}}| = 8$ induct stations positioned along one wall of
-the warehouse, and $|\mathcal{S}^{\text{ej}}| = 38$ eject stations distributed
-across the opposite end.
-A set of internal obstacles represents shelving aisles, creating a structured
-navigation challenge.
-Charging stations are located near the centre of the grid.
+Experiments are conducted across six warehouse environments of increasing scale,
+summarised in Table~\ref{tab:environments}.
+Each environment is a 2D gridworld with induct stations (task pickup points),
+eject stations (delivery destinations), internal obstacles representing shelving
+aisles, and charging stations.
 All agents are initialised at their home positions at $t = 0$.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Warehouse environments used in the evaluation, ordered by fleet size.}
+  \label{tab:environments}
+  \small
+  \begin{tabular}{lccccc}
+    \toprule
+    \textbf{Environment} & \textbf{Grid} & \textbf{Agents} $\Na$ &
+    \textbf{Induct} $|\mathcal{S}^{\text{in}}|$ &
+    \textbf{Eject} $|\mathcal{S}^{\text{ej}}|$ \\
+    \midrule
+    \texttt{warehouse\_small}  & $30\times30$   & 6   & 8  & 38 \\
+    \texttt{crossdock}         & $44\times28$   & 12  & 6  & 10 \\
+    \texttt{kiva}              & $36\times36$   & 20  & 5  & 10 \\
+    \texttt{warehouse\_large}  & $60\times60$   & 18  & 12 & 80 \\
+    \texttt{kiva\_large}       & $72\times72$   & 80  & 5  & 10 \\
+    \texttt{shelf\_aisle}      & $161\times63$  & 200 & 20 & 19 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The environments span fleet sizes from 6 to 200 agents and grid areas from
+$900$ to over $10{,}000$ cells, enabling evaluation across a wide range of
+congestion levels and communication graph densities.
+\texttt{warehouse\_small} is used as the primary development and ablation
+environment; results across all six environments are reported in the
+scalability experiments (Section~\ref{sec:exp_planners}).
 
 \begin{figure}[htbp]
   \centering
@@ -151,10 +175,10 @@ All agents are initialised at their home positions at $t = 0$.
   \textbf{[FIGURE PLACEHOLDER: Grid world visualisation showing induct stations (blue),
   eject stations (red), obstacles (grey), charging stations (green), and
   agent starting positions.]}
-  \caption{The $30 \times 30$ warehouse grid environment used in all
-           experiments. Induct stations (blue) are task pickup locations along
-           the top wall; eject stations (red) are delivery destinations at the
-           bottom. Internal shelving creates constrained navigation corridors.}
+  \caption{The \texttt{warehouse\_small} ($30 \times 30$) environment.
+           Induct stations (blue) are task pickup locations; eject stations
+           (red) are delivery destinations. Internal shelving creates
+           constrained navigation corridors.}
   \label{fig:gridworld}
 \end{figure}
 
