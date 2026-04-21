@@ -328,7 +328,7 @@ def main():
     parser.add_argument(
         "--path-planner",
         dest="path_planner",
-        choices=["ca_star", "rhcr", "pbs"],
+        choices=["ca_star", "rhcr", "pbs", "cbs", "rhcr_cbs", "pibt"],
         default="ca_star",
         help="Path planning algorithm (default: ca_star)",
     )
