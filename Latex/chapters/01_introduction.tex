@@ -42,8 +42,8 @@ within its communication neighbourhood, achieving resilience to node failures
 and communication outages at the cost of solution quality guarantees.
 The Consensus-Based Bundle Algorithm (CBBA)~\cite{choi2009consensus} and its
 global extension GCBBA~\cite{kha2025enhancing} represent the state of the art
-in this family: they provably converge to within $\frac{1}{2}$ of the optimal
-assignment on any \emph{connected} communication graph.
+in this family: they provably converge to within 50\% of the optimal
+assignment value on any \emph{connected} communication graph.
 
 The critical qualification of \emph{connected} is where both methods fall
 short of real-world requirements.
@@ -138,7 +138,7 @@ The thesis investigates three research questions:
     communication connectivity varies?
     On connected graphs where SGA is a valid reference, what is the
     sub-optimality ratio of LCBA, and does it remain within the theoretical
-    $\frac{1}{2}$-optimality bound?
+    50\%-optimality bound?
 
   \item[\textbf{RQ3.}] How do alternative path planning strategies affect
     system throughput, task wait time, and computational overhead?
@@ -164,7 +164,7 @@ This thesis makes the following contributions:
         (c) dynamically changing communication topology by reconstructing
             the graph at every timestep.
         On connected components, LCBA inherits GCBBA's convergence to the SGA
-        solution and the associated $\frac{1}{2}$-optimality guarantee.
+        solution and the associated 50\%-optimality guarantee.
 
   \item \textbf{A hybrid, modular coordination pipeline.}
         LCBA is integrated with three interchangeable path planning strategies

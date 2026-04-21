@@ -63,7 +63,7 @@ Under utility functions that satisfy the \emph{Diminishing Marginal Gain}
 (DMG) property~\cite{fisher1978analysis}, SGA achieves at least half the
 optimal assignment value.
 This guarantee is tight: there exist instances where SGA achieves exactly
-$\frac{1}{2}$ of the optimum.
+50\% of the optimum.
 
 Centralised methods share two practical weaknesses.
 First, they assume that all task and agent information is available at a single
@@ -99,7 +99,7 @@ of update/reset/leave rules to resolve conflicts.
 \citeauthor{choi2009consensus} prove that CBBA converges to a valid
 conflict-free assignment (no task assigned to more than one agent) on any
 connected graph, and that the assignment achieves at least
-$\frac{1}{2}$-optimality under DMG utilities.
+50\%-optimality under DMG utilities.
 
 CBBA's key limitation is its \emph{local} consensus protocol: each agent
 communicates only with its immediate neighbours, and a single round of exchange
@@ -419,7 +419,7 @@ setting demands:
 
 This thesis addresses all three gaps through the LCBA algorithm and its
 integration with three path planning modules.
-LCBA inherits the $\frac{1}{2}$-optimality guarantee and convergence properties
+LCBA inherits the 50\%-optimality guarantee and convergence properties
 of GCBBA/SGA on connected components, while extending correctness guarantees to
 disconnected and dynamically changing topologies.
 The empirical evaluation in Chapter~\ref{chap:experiments} quantifies the
