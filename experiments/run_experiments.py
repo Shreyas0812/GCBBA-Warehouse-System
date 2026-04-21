@@ -56,7 +56,7 @@ def get_experiment_configs(
     # Define constants - independent of the map but common across experiments
     STUCK_THRESHOLD = 15
     QUEUE_MAX_DEPTH = 10
-    WARMUP_TIMESTEPS = 300
+    WARMUP_TIMESTEPS = 0
     ALLOCATION_TIMEOUT_S = 10.0
     WALL_CLOCK_LIMIT_S = 2400.0
 
