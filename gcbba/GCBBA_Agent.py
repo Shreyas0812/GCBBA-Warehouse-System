@@ -66,7 +66,7 @@ class GCBBA_Agent:
         self.converged = False
         
         # convergence observation list
-        self.their_net_cvg = [False for _ in range(self.D)]
+        self.their_net_cvg = [False for _ in range(self.D + 1)]
         self.cvg_counter = 0
 
         # # Marginal gain list
@@ -301,7 +301,7 @@ class GCBBA_Agent:
         niegh_idxs = np.argwhere(self.G[self.id, :] == 1).flatten()
         niegh_idxs = niegh_idxs[niegh_idxs != self.id]  # Exclude self
 
-        neigh_cvg = [True for _ in range(self.D)]
+        neigh_cvg = [True for _ in range(self.D + 1)]
 
         for k in niegh_idxs:
             neigh = all_agents[k]
@@ -406,12 +406,12 @@ class GCBBA_Agent:
             self.compute_s(neigh, consensus_iter)
 
             # Neighbor convergence observation update
-            for i in range(1, self.D):
+            for i in range(1, self.D + 1):
                 neigh_cvg[i] = neigh_cvg[i] and neigh.their_net_cvg[i-1]
             
         # Update convergence observation
         self.their_net_cvg[0] = (self.z == self.z_before)
-        for i in range(1, self.D):
+        for i in range(1, self.D + 1):
             self.their_net_cvg[i] = neigh_cvg[i] and self.their_net_cvg[i-1]
         
         self.converged = self.their_net_cvg[-1]
