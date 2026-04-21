@@ -4,364 +4,798 @@
 \chapter{System Design and Methodology}
 \label{chap:methodology}
 
-% GUIDANCE: 10--15 pages. This is your strongest chapter -- you built
-% all of this and know it cold. Write it first.
-% Structure: problem formulation → system overview →
-%            each component in depth → integration.
-% Use figures and pseudocode liberally. Equations should be numbered.
+This chapter describes the full coordination pipeline developed in this thesis.
+Section~\ref{sec:method_formulation} establishes the formal problem statement
+and notation used throughout.
+Section~\ref{sec:method_overview} presents the high-level system architecture.
+Section~\ref{sec:method_environment} describes the warehouse simulation environment.
+Section~\ref{sec:method_gcbba} details the GCBBA algorithm and its adaptation
+to the warehouse setting, culminating in the LCBA extension.
+Section~\ref{sec:method_collision} describes the family of three path planning
+strategies available within the pipeline.
+Section~\ref{sec:method_dynamic} explains the dynamic replanning mechanism
+that ties allocation and path execution together.
+Section~\ref{sec:method_baselines} describes the baseline methods, and
+Section~\ref{sec:method_design} justifies the key architectural decisions.
 
 
-% ── 3.1 ─────────────────────────────────────────────────────────
+%% ── 3.1 ─────────────────────────────────────────────────────────
 \section{Problem Formulation}
 \label{sec:method_formulation}
 
-% Give a precise mathematical statement of what you are solving.
-% This locks down notation used throughout the chapter.
+Let $\mathcal{A} = \{a_1, \ldots, a_{\Na}\}$ denote a team of $\Na$ homogeneous
+mobile agents operating on a two-dimensional grid workspace
+$\mathcal{W} \subset \mathbb{Z}^2$ containing a set of static obstacles
+$\mathcal{O} \subset \mathcal{W}$.
+At each discrete timestep $t \in \{0, 1, 2, \ldots\}$, each agent occupies a
+unique cell $x_i(t) \in \mathcal{W} \setminus \mathcal{O}$ and may choose to move to any
+of its four cardinal neighbours or remain stationary (Hold Position).
 
-\todo{Write formal problem statement. Define:
-  $\mathcal{A} = \{a_1, \ldots, a_{\Na}\}$ -- set of agents;
-  $\mathcal{T} = \{t_1, \ldots, t_{\Nt}\}$ -- set of tasks
-    (each task = pickup at induct station $s_j^{in}$,
-     deliver to eject station $s_j^{ej}$);
-  $G(t)$ -- dynamic communication graph at time $t$
-    (edge $(i,k)$ iff $\|x_i - x_k\| \leq \comm$);
-  Objective: minimise makespan (time to complete all tasks)
-    subject to: collision-free paths, task completion,
-    using only information available within communication range.}
+\textbf{Tasks.}
+Tasks arrive online over time.
+Let $\mathcal{T}(t)$ denote the set of tasks available at timestep $t$.
+Each task $\tau_j \in \mathcal{T}(t)$ is a pickup-and-delivery pair
+$\tau_j = (s_j^{\text{in}}, s_j^{\text{ej}})$, where
+$s_j^{\text{in}} \in \mathcal{S}^{\text{in}}$ is the induct (pickup) station and
+$s_j^{\text{ej}} \in \mathcal{S}^{\text{ej}}$ is the eject (delivery) station.
+A task is \emph{completed} when an agent visits $s_j^{\text{in}}$ followed by
+a visit to $s_j^{\text{ej}}$ while the task is assigned to it.
+Doing this constitutes completing a task.
 
-$\mathcal{A} = \{a_1, \ldots, a_{\Na}\}$ -- set of agents \\
-$\mathcal{T} = \{t_1, \ldots, t_{\Nt}\}$ -- set of tasks \\
+\textbf{Communication.}
+Agents communicate over a proximity-based wireless channel with range
+$\comm > 0$.
+The communication graph at time $t$ is
+\begin{equation}
+  G(t) = (\mathcal{A},\; E(t)),
+  \quad
+  E(t) = \bigl\{(i,k) : \|x_i(t) - x_k(t)\|_2 \leq \comm\bigr\},
+  \label{eq:comm_graph}
+\end{equation}
+where $\|\cdot\|_2$ denotes Euclidean distance.
+The graph $G(t)$ may be disconnected and changes at every timestep as agents
+move.
 
-(each task = pickup at induct station $s_j^{in}$,
-     deliver to eject station $s_j^{ej}$); \\
+\textbf{Objective.}
+The system operates in two experimental modes.
+In \emph{batch mode}, a fixed set of $\Nt$ tasks is released at $t = 0$ and
+the objective is to minimise makespan: the timestep at which the last task is
+completed.
+In \emph{steady-state mode}, tasks arrive continuously at each induct station at
+rate $\lambda$ tasks per timestep, and the objective is to maximise throughput:
+the number of tasks completed per timestep after a warm-up period.
 
-       $G(t)$ -- dynamic communication graph at time $t$
-    (edge $(i,k)$ iff $\|x_i - x_k\| \leq \comm$);\\
-    
-  Objective: minimise makespan (time to complete all tasks) \\
-    subject to: collision-free paths, task completion,
-    using only information available within communication range. \\
-
-We define several warehouse scenarios:
-
-1. Small Warehouse 
-2.
-3.
-4.
-5.
+\textbf{Constraints.}
+In both modes, every agent must follow a collision-free path:
+no two agents may occupy the same cell at the same timestep (vertex conflict),
+and no two agents may traverse the same edge in opposite directions within the
+same timestep (edge conflict).
+Agents have finite energy and must periodically visit a designated charging
+station; they may not execute tasks while charging.
+All decisions must be made using only information locally available to an agent
+within its communication neighbourhood $\mathcal{N}_i(t) = \{k : (i,k) \in E(t)\}$.
 
 
-% ── 3.2 ─────────────────────────────────────────────────────────
+%% ── 3.2 ─────────────────────────────────────────────────────────
 \section{System Architecture Overview}
 \label{sec:method_overview}
 
-% A high-level block diagram showing the two main components
-% (GCBBA allocator + collision avoidance path planner) and how
-% they interact through the Integration Orchestrator.
-% The key design decision to motivate: hybrid decentralised
-% (allocation) / centralised (collision avoidance). Justify this.
+The coordination pipeline is structured around two principal components, shown
+schematically in Figure~\ref{fig:system_architecture}: a \emph{task allocator}
+and a \emph{path planner}, integrated through a centralised
+\texttt{IntegrationOrchestrator}.
 
 \begin{figure}[htbp]
   \centering
-  % \includegraphics[width=0.9\textwidth]{system_architecture}
-  \todo{Insert system architecture block diagram. Show:
-  IntegrationOrchestrator, GCBBA\_Orchestrator,
-  TimeBasedCollisionAvoidance, AgentState, and the data flow
-  between them.}
-  \caption{System architecture overview. The Integration
-           Orchestrator coordinates between the GCBBA task
-           allocator and the time-based collision avoidance
-           path planner.}
+  % \includegraphics[width=0.9\textwidth]{figures/system_architecture}
+  \textbf{[FIGURE PLACEHOLDER: System architecture block diagram showing IntegrationOrchestrator,
+  GCBBA\_Orchestrator, PathPlanner, AgentState, and data flow between them.]}
+  \caption{System architecture overview. The \texttt{IntegrationOrchestrator}
+           coordinates the LCBA task allocator with one of three interchangeable
+           path planners. Allocation is logically decentralised (agents run
+           the GCBBA protocol using only local communication), while path
+           planning uses a shared reservation table maintained by the
+           orchestrator.}
   \label{fig:system_architecture}
 \end{figure}
 
-\todo{Write 1 page explaining the hybrid architecture. The key
-justification: task allocation is inherently decentralised
-(agents have different information under disconnected graphs),
-but collision avoidance requires global spatial knowledge that
-is cheaper to centralise in a bounded warehouse.}
+The task allocator runs the GCBBA/LCBA algorithm (Section~\ref{sec:method_gcbba}).
+It is \emph{logically decentralised}: each agent maintains its own bid and
+assignment vectors and communicates only with its current communication
+neighbours.
+The orchestrator simulates this communication by invoking the GCBBA update
+rules for each agent using only the neighbourhood defined by $G(t)$.
+
+The path planner (Section~\ref{sec:method_collision}) is \emph{physically
+centralised} in the simulation: the orchestrator has global visibility of
+all agent positions and plans collision-free paths for all agents using
+a shared space-time reservation table.
+% This design choice --- decentralised allocation, centralised collision
+% avoidance --- is justified on two grounds.
+% First, task allocation decisions are inherently private: agents in disconnected
+% components have different information and may reach different allocation
+% decisions, which is exactly the behaviour we wish to study.
+% Second, collision-free path planning in a bounded warehouse environment does not
+% require private information; centralising it eliminates the complexity of
+% distributed reservation table consensus while keeping the allocation protocol
+% clean for comparison across baselines.
+The path planner is designed as a modular component; three implementations are
+provided and studied in Section~\ref{sec:method_collision}.
+
+Each agent's state is tracked by an \texttt{AgentState} object that records
+its current position, assigned task, planned path, energy level, and charging
+status.
+The per-timestep simulation loop, described in
+Section~\ref{sec:method_dynamic}, drives agents forward along their planned
+paths and triggers replanning events as needed.
 
 
-% ── 3.3 ─────────────────────────────────────────────────────────
+%% ── 3.3 ─────────────────────────────────────────────────────────
 \section{Warehouse Environment}
 \label{sec:method_environment}
 
-% Describe the grid world: dimensions, obstacle layout, station
-% positions, agent starting positions. This grounds all subsequent
-% discussion.
-
-\todo{Describe the 30$\times$30 grid environment:
-  6 agents, 8 induct stations, 38 eject stations, obstacle layout.
-  Include a figure of the grid world from your visualisation.
-  Define the continuous-to-grid coordinate mapping.}
+All experiments use a $30 \times 30$ gridworld warehouse, depicted in
+Figure~\ref{fig:gridworld}.
+The environment contains $\Na = 6$ agents,
+$|\mathcal{S}^{\text{in}}| = 8$ induct stations positioned along one wall of
+the warehouse, and $|\mathcal{S}^{\text{ej}}| = 38$ eject stations distributed
+across the opposite end.
+A set of internal obstacles represents shelving aisles, creating a structured
+navigation challenge.
+Charging stations are located near the centre of the grid.
+All agents are initialised at their home positions at $t = 0$.
 
 \begin{figure}[htbp]
   \centering
-  % \includegraphics[width=0.6\textwidth]{gridworld}
-  \todo{Insert grid world figure showing agent starting positions,
-  induct stations (I), eject stations (E), and obstacles.}
-  \caption{The $30 \times 30$ warehouse grid environment.
-           Induct stations (blue) are task pickup locations;
-           eject stations (red) are delivery destinations.}
+  % \includegraphics[width=0.6\textwidth]{figures/gridworld}
+  \textbf{[FIGURE PLACEHOLDER: Grid world visualisation showing induct stations (blue),
+  eject stations (red), obstacles (grey), charging stations (green), and
+  agent starting positions.]}
+  \caption{The $30 \times 30$ warehouse grid environment used in all
+           experiments. Induct stations (blue) are task pickup locations along
+           the top wall; eject stations (red) are delivery destinations at the
+           bottom. Internal shelving creates constrained navigation corridors.}
   \label{fig:gridworld}
 \end{figure}
 
+\textbf{Task arrival model.}
+In batch mode, all $\Nt$ tasks are injected at $t = 0$.
+In steady-state mode, each induct station generates one task every
+$\text{round}(1/\lambda)$ timesteps (minimum 1), where $\lambda$ is the
+per-station arrival rate.
+A per-station queue of depth $Q_{\max} = 5$ buffers tasks before they are
+claimed by an agent; tasks that arrive when the queue is full are dropped and
+counted as a capacity violation metric.
 
-% ── 3.4 ─────────────────────────────────────────────────────────
+\textbf{Energy model.}
+Each agent starts with full energy and consumes one unit per timestep of movement.
+When the estimated remaining distance to the nearest charger falls below a
+threshold proportional to the agent's current energy, the agent suspends task
+execution, travels to the nearest available charging station, charges until
+full, and then resumes.
+Charging events trigger a reallocation (Section~\ref{sec:method_triggers})
+because the agent's effective availability changes.
+
+\textbf{Distance computation.}
+All travel-time estimates used in the GCBBA bid computation
+(Section~\ref{sec:method_gcbba}) are derived from BFS-precomputed shortest-path
+tables over the obstacle-free grid, not Euclidean distance.
+This is crucial: Euclidean distance systematically underestimates travel time
+near obstacle clusters, causing agents to bid too aggressively on distant tasks
+and producing suboptimal assignments.
+The BFS tables are computed once at initialisation and shared across all agents.
+
+
+%% ── 3.4 ─────────────────────────────────────────────────────────
 \section{GCBBA for Warehouse Task Allocation}
 \label{sec:method_gcbba}
 
-% This is the algorithmic core. Cover: RPT metric, bundle building,
-% global consensus, convergence, how you adapted it to warehouses.
+The Global Consensus-Based Bundle Algorithm
+(GCBBA)~\cite{kha2025enhancing} extends the Consensus-Based Bundle
+Algorithm (CBBA)~\cite{choi2009consensus} in three key directions: a stronger
+utility metric, a global (rather than local) consensus protocol, and a
+decentralised convergence detection mechanism.
+This section describes each component and then explains the additional
+adaptations made to handle the warehouse setting and dynamic task arrivals,
+which together constitute the Local Consensus-Based Bundle Algorithm (LCBA).
 
 
-% ── 3.4.1 ──────────────────────────────────────────────────────
+%% ── 3.4.1 ──────────────────────────────────────────────────────
 \subsection{The RPT Utility Function}
 \label{subsec:method_rpt}
 
-% Define RPT formally. Prove (or cite proof) that it is DMG.
-% Show that it aligns with makespan objective.
+Both CBBA and GCBBA evaluate task assignments using a score function that
+must satisfy the \emph{Diminishing Marginal Gain} (DMG) property, a condition
+that enables the 50\% optimality guarantee relative to the optimal assignment
+value~\cite{fisher1978analysis}.
 
-The Repeated Path Times (RPT) utility function~\citep{kha2025enhancing}
-assigns a score to agent $i$'s task path $p_i$ as:
-
+GCBBA introduces the \emph{Repeated Path Times} (RPT) utility
+function~\cite{kha2025enhancing}:
 \begin{equation}
   S_i^{\text{RPT}}(p_i) = -\sum_{j \in p_i}
-    \tau_{ij}(p_i^{\preceq j})
+    \tau_{ij}\!\bigl(p_i^{\preceq j}\bigr),
   \label{eq:rpt}
 \end{equation}
+where $p_i$ is an ordered sequence of tasks assigned to agent $i$,
+$p_i^{\preceq j}$ denotes the subsequence of $p_i$ up to and including task $j$,
+and $\tau_{ij}(p_i^{\preceq j})$ is the \emph{completion time} of task $j$
+given that agent $i$ executes the preceding tasks in order before $j$.
+In the warehouse setting, $\tau_{ij}$ is computed using the BFS-precomputed
+grid distance from the agent's estimated position after completing the
+preceding tasks to $s_j^{\text{in}}$, and then from $s_j^{\text{in}}$ to
+$s_j^{\text{ej}}$.
 
-\noindent where $\tau_{ij}(p_i^{\preceq j})$ is the completion
-time of task $j$ given the subsequence of $p_i$ up to and
-including $j$.
+Intuitively, RPT penalises both the number of tasks and their cumulative
+completion time, naturally aligning the utility function with makespan
+minimisation.
+The marginal gain of adding task $j^*$ to an existing path $p_i$ is
+\begin{equation}
+  \Delta_i(j^* \mid p_i) = S_i^{\text{RPT}}(p_i \oplus j^*) - S_i^{\text{RPT}}(p_i),
+  \label{eq:marginal}
+\end{equation}
+where $p_i \oplus j^*$ denotes optimal insertion of $j^*$ into $p_i$
+(evaluated at every insertion point and taking the best).
+It can be shown~\cite{kha2025enhancing} that $\Delta_i(j^* \mid p_i)$ is
+non-increasing in $p_i$ under the RPT metric, confirming the DMG property.
 
-\todo{Expand definition. Show marginal gain computation.
-Prove or cite the DMG property of RPT. Explain why DMG is
-essential for the 50\% optimality guarantee.}
 
-
-% ── 3.4.2 ──────────────────────────────────────────────────────
+%% ── 3.4.2 ──────────────────────────────────────────────────────
 \subsection{Bundle Building Phase}
 \label{subsec:method_bundle}
 
-% Describe the ADD bundle building strategy. Pseudocode here.
+Each agent $i$ maintains:
+a \emph{bundle} $b_i \subseteq \mathcal{T}$ (the set of tasks currently
+assigned to it, unordered),
+an ordered \emph{path} $p_i$ (the execution order of $b_i$),
+a \emph{bid vector} $y \in \mathbb{R}^{|\mathcal{T}|}$ recording the best bid
+seen for each task across all agents, and
+a \emph{winner vector} $z \in \mathcal{A}^{|\mathcal{T}|}$ recording the
+current winning agent for each task.
+
+Algorithm~\ref{alg:bundle_building} describes the bundle building phase.
+Each iteration, agent $i$ greedily adds the highest-marginal-gain task that it
+can outbid to its bundle, up to the bundle capacity $\Lt$.
+Task insertion is evaluated at every position in the current path $p_i$, with
+the optimal insertion point selected.
+The process terminates either when the bundle is full ($|b_i| = \Lt$), when no
+task offers a positive marginal gain, or when no task can be outbid.
 
 \begin{algorithm}[htbp]
 \caption{GCBBA Bundle Building (agent $i$)}
 \label{alg:bundle_building}
 \begin{algorithmic}[1]
-\Require Tasks $\mathcal{T}$, current path $p_i$, bids $y$, winners $z$
-\While{$|b_i| < \Lt$ and not converged}
+\Require Tasks $\mathcal{T}$, current path $p_i$, bid vector $y$, winner vector $z$
+\Ensure Updated bundle $b_i$, path $p_i$, bids $y$, winners $z$
+\While{$|b_i| < \Lt$}
   \ForAll{task $j \notin p_i$}
-    \State Compute bid $c_{ij} \leftarrow
-           S_i(p_i \oplus_{\text{opt}} j) - S_i(p_i)$
+    \State Compute marginal gain $c_{ij} \leftarrow \Delta_i(j \mid p_i)$ via optimal insertion
   \EndFor
-  \State $j^* \leftarrow \arg\max_j \{c_{ij} : c_{ij} > y_j\}$
-  \If{$j^*$ exists}
-    \State Add $j^*$ to bundle $b_i$, insert into path $p_i$
-    \State $y_{j^*} \leftarrow c_{ij^*}$, $z_{j^*} \leftarrow i$
-  \Else
-    \State \textbf{break}
-  \EndIf
+  \State $j^* \leftarrow \arg\max_{j \notin p_i} \bigl\{c_{ij} \;:\; c_{ij} > y_j\bigr\}$
+  \If{no such $j^*$ exists} \textbf{break} \EndIf
+  \State Append $j^*$ to bundle: $b_i \leftarrow b_i \cup \{j^*\}$
+  \State Insert $j^*$ at optimal position in path $p_i$
+  \State Update bid and winner: $y_{j^*} \leftarrow c_{ij^*}$,\; $z_{j^*} \leftarrow i$
 \EndWhile
 \end{algorithmic}
 \end{algorithm}
 
-\todo{Expand pseudocode and explain each step. Describe BFS-based
-distance lookup used for efficient $\tau_{ij}$ computation
-(the key optimisation that makes this practical on a grid).}
+In the warehouse adaptation, the BFS distance table replaces Euclidean distance
+in the completion-time computation.
+This ensures that $\tau_{ij}$ accurately reflects actual navigation time around
+obstacles, which can differ from straight-line distance by a factor of two or
+more in densely shelved environments.
 
 
-% ── 3.4.3 ──────────────────────────────────────────────────────
+%% ── 3.4.3 ──────────────────────────────────────────────────────
 \subsection{Global Consensus Phase}
 \label{subsec:method_consensus}
 
-% The key difference between CBBA and GCBBA: global vs local
-% consensus. Explain the conflict resolution rules (update/reset/
-% leave) and how global consensus restores SGA convergence.
+After bundle building, agents exchange their current bid and winner vectors with
+their communication neighbours.
+The \emph{conflict resolution rules} from~\cite{choi2009consensus,kha2025enhancing}
+determine, for each task $j$ and each pair of agents $i$ and $k$, whether
+agent $i$ should \textsc{Update} (accept $k$'s information), \textsc{Reset}
+(remove $j$ from its own bundle), or \textsc{Leave} (retain its current
+information).
+The key distinction between CBBA and GCBBA lies in how many communication
+rounds are performed per iteration.
 
-\todo{Describe the $2D$ consensus rounds per iteration where $D$
-is the graph diameter. Explain the conflict resolution table
-from~\citep{kha2025enhancing}. Show how this ensures GCBBA
-converges to the SGA solution (Theorem from paper).}
+CBBA performs a single round of neighbour-to-neighbour information exchange.
+On a graph of diameter $D$, this means that information originating at one end
+of the network may take $D$ rounds to reach the other end, during which
+intermediate agents may have already committed to conflicting assignments.
+As a result, CBBA is not guaranteed to produce the same assignment as SGA on
+graphs with diameter greater than one.
+
+GCBBA corrects this by performing $2D$ consensus rounds per iteration, where
+$D$ is the diameter of the current communication graph~\cite{kha2025enhancing}.
+After $2D$ rounds, every agent's information has propagated to every other agent
+and back, guaranteeing that the final assignment is conflict-free and equivalent
+to the SGA solution on connected graphs.
+The diameter $D$ is estimated locally by each agent using a distributed
+computation embedded in the consensus protocol.
+
+In the LCBA extension for disconnected graphs, consensus is restricted to each
+connected component of $G(t)$ independently.
+Agents in different components run the consensus protocol separately and reach
+self-consistent assignments within their component.
+When two components reconnect at a later timestep, a reallocation is triggered
+(Section~\ref{sec:method_triggers}) to resolve any cross-component conflicts.
+Tasks that are still pending (not yet physically picked up) can be reassigned
+at this point.
 
 
-% ── 3.4.4 ──────────────────────────────────────────────────────
+%% ── 3.4.4 ──────────────────────────────────────────────────────
 \subsection{Decentralised Convergence Detection}
 \label{subsec:method_convergence}
 
-% The $E^{cvg}$ vector mechanism. This allows early termination
-% which is important for computational efficiency in real-time use.
+Running $2D$ consensus rounds per iteration is necessary for correctness but
+computationally expensive when the graph is large or deep.
+GCBBA includes a decentralised convergence detection mechanism to allow early
+termination~\cite{kha2025enhancing}.
 
-\todo{Describe the convergence detection vector~\citep{kha2025enhancing}.
-State the convergence bound $N_{\min} = \min(\Nt, \Lt \cdot \Na)$
-and explain why early stopping matters for real-time operation.}
+Each agent $i$ maintains a per-agent binary vector
+$E^{\text{cvg}}_i \in \{0,1\}^{D+1}$, where entry $E^{\text{cvg}}_i[k] = 1$
+indicates that all agents within $k$ hops of agent $i$ have converged,
+i.e.\ their winner vector $z_i$ is unchanged from the previous iteration.
+The first entry $E^{\text{cvg}}_i[1]$ is set by agent $i$ itself; subsequent
+entries are propagated outward during the consensus rounds using neighbouring
+agents' vectors.
+The algorithm terminates as soon as any agent observes
+$E^{\text{cvg}}_i[D+1] = 1$, which certifies that the entire network has
+reached a stable assignment.
+The outer iteration loop provides a fallback bound of $N_{\min} = \min(\Nt,\,\Lt\cdot\Na)$
+iterations, ensuring termination even if early convergence is never detected.
+Early termination significantly reduces computational cost in practice, since
+convergence often occurs well before the theoretical $N_{\min}$-iteration bound.
+This is especially important in the real-time warehouse setting, where each
+allocation call must complete within a per-timestep budget.
 
 
-% ── 3.4.5 ──────────────────────────────────────────────────────
-\subsection{Warehouse Adaptation}
+%% ── 3.4.5 ──────────────────────────────────────────────────────
+\subsection{Warehouse Adaptation and LCBA}
 \label{subsec:method_warehouse_adaptation}
 
-% How you adapted the original GCBBA (designed for point tasks)
-% to the pickup-and-delivery task structure.
-% Key change: BFS distance tables replace Euclidean distance,
-% grid positions replace continuous positions.
+The standard GCBBA formulation~\cite{kha2025enhancing} assumes a fixed, fully
+known task set and a static communication graph.
+Four adaptations are required for the warehouse setting:
 
-\todo{Describe adaptations:
-  (1) Pickup-and-delivery task structure (two waypoints per task);
-  (2) BFS pre-computed distance tables for grid-based $\tau_{ij}$;
-  (3) Communication graph construction from agent proximity
-      (\texttt{create\_graph\_with\_range});
-  (4) Diameter computation on potentially disconnected graphs
-      (max component diameter).}
+\textbf{(1) Pickup-and-delivery tasks.}
+Each task $\tau_j$ involves two waypoints rather than one.
+The completion time $\tau_{ij}$ is computed as the BFS distance from the
+agent's current position (or its projected position after completing preceding
+tasks) to $s_j^{\text{in}}$, plus the BFS distance from $s_j^{\text{in}}$ to
+$s_j^{\text{ej}}$.
+
+\textbf{(2) BFS-precomputed distance tables.}
+A BFS from every grid cell to every other cell is precomputed once at
+initialisation and stored as a distance table.
+At runtime, each call to $\tau_{ij}$ is a single table lookup, making the
+marginal gain computation $O(1)$ per task rather than $O(|\mathcal{W}|)$.
+
+\textbf{(3) Dynamic communication graph.}
+The function \texttt{create\_graph\_with\_range} reconstructs $G(t)$ from
+current agent positions at the start of each allocation call.
+For disconnected graphs, each connected component runs the consensus protocol
+independently; $D$ is taken as the maximum component diameter, ensuring every
+component executes sufficient consensus rounds to converge.
+The $2D$ consensus rounds are then scheduled accordingly.
+
+\textbf{(4) Dynamic task arrivals and event-driven replanning.}
+Tasks arrive online; the task set $\mathcal{T}(t)$ grows over time.
+The allocation is re-invoked whenever a triggering event occurs
+(Section~\ref{sec:method_triggers}).
+When replanning, only tasks that have not yet been physically picked up are
+eligible for reassignment, ensuring consistency with tasks already in progress.
+
+Together, these adaptations constitute the \textbf{Local Consensus-Based Bundle
+Algorithm (LCBA)}: GCBBA extended to handle disconnected and dynamically
+changing communication graphs with online task arrivals.
+LCBA uses the same GCBBA consensus protocol but re-invokes it on the
+event-driven triggers described above, enabling continuous adaptation as tasks
+arrive and communication topology evolves.
 
 
-% ── 3.5 ─────────────────────────────────────────────────────────
-\section{Collision-Free Path Planning}
+%% ── 3.5 ─────────────────────────────────────────────────────────
+\section{Path Planning Strategies}
 \label{sec:method_collision}
 
-% Describe the time-based A* with reservation tables.
-% This is the second major component.
+Once an allocation assigns tasks to agents, each agent must follow a
+collision-free path through the warehouse grid.
+The path planning component is responsible for computing these paths while
+respecting the vertex and edge conflict constraints defined in
+Section~\ref{sec:method_formulation}.
+Three planning strategies are implemented as interchangeable modules within the
+pipeline.
+All three share a common interface and the same underlying space-time reservation
+table, enabling fair comparisons that isolate the effect of the planning
+strategy from all other system components.
 
 
-% ── 3.5.1 ──────────────────────────────────────────────────────
-\subsection{Space-Time A* with Reservation Tables}
-\label{subsec:method_astar}
+%% ── 3.5.1 ──────────────────────────────────────────────────────
+\subsection{Space-Time Search Formulation}
+\label{subsec:method_spacetime}
 
-% Formally describe the space-time search: state = (position, t),
-% reservations encode other agents' committed positions.
+All planners in this pipeline operate on a space-time graph
+$\mathcal{G}^{\text{ST}} = (\mathcal{V}^{\text{ST}}, \mathcal{E}^{\text{ST}})$
+where each node $(x, y, t)$ represents cell $(x, y)$ at timestep $t$.
+An edge connects $(x, y, t)$ to $(x', y', t+1)$ if $(x', y')$ is either the
+same cell (wait action) or a cardinal neighbour of $(x, y)$ in the
+obstacle-free grid.
+The \emph{reservation table} $\mathcal{R}$ is a set of
+$(x, y, t)$ triples indicating space-time positions reserved by agents whose
+paths have already been planned.
+A conflict-free path for agent $i$ must avoid all reservations in
+$\mathcal{R}$ and additionally must not create edge conflicts with paths already
+in $\mathcal{R}$.
 
-\todo{Describe the time-based A* formulation. State:
-  search state $(x, y, z, t)$;
-  vertex conflict: two agents at same $(x,y,z,t)$;
-  edge conflict: swap conflict at time $t$;
-  cost function and heuristic (Manhattan distance).
-  Include pseudocode or refer to Algorithm X.}
+The \emph{goal reservation} mechanism addresses the problem of indefinite
+blocking at delivery cells: once agent $i$ arrives at its delivery cell
+$s_j^{\text{ej}}$ at time $t^*$, the cell $(s_j^{\text{ej}}, t)$ is reserved
+for all $t \geq t^*$ until the agent departs.
+This prevents other agents from entering the cell while agent $i$ is completing
+the task, while allowing the reservation to be lifted once the task is marked
+complete and the agent moves on.
 
-
-% ── 3.5.2 ──────────────────────────────────────────────────────
-\subsection{Priority Ordering}
-\label{subsec:method_priority}
-
-% How agents are ordered when planning paths. Higher priority agents
-% plan first; lower priority agents route around them.
-% Discuss the completeness trade-off.
-
-\todo{Describe priority-based path planning. Explain the
-completeness caveat: prioritised A* is not guaranteed complete
-with fixed priorities, but the stuck detection + replanning
-mechanism provides a practical recovery path.}
-
-
-% ── 3.5.3 ──────────────────────────────────────────────────────
-\subsection{Goal Reservation Mechanism}
-\label{subsec:method_goal_reservation}
-
-% The goal reservation prevents agents from blocking each other
-% at destination cells indefinitely. Describe how it works.
-
-\todo{Describe goal reservation: once an agent plans to a goal,
-that cell is reserved from the agent's arrival time onward.
-Other agents must route around it. Explain the trade-off vs
-unlimited future reservation (which caused deadlocks).}
+The heuristic used in all A*-based planners is the BFS distance from the
+current cell to the goal, ignoring temporal constraints (consistent and
+admissible).
 
 
-% ── 3.6 ─────────────────────────────────────────────────────────
+%% ── 3.5.2 ──────────────────────────────────────────────────────
+\subsection{Cooperative A* with Reservation Tables (CA*)}
+\label{subsec:method_castar}
+
+Cooperative A* (CA*)~\cite{silver2005cooperative} is the default planner and
+the baseline against which all others are compared.
+Paths are planned in two phases per replanning call.
+In Phase~1, agents navigating to a charging station plan first and reserve their
+paths in $\mathcal{R}$, so that task agents automatically route around them in
+Phase~2.
+Within each phase, the planning order is randomised to avoid systematic priority
+bias: no agent consistently receives the easiest routing problem by virtue of a
+fixed priority assignment.
+Idle agents (no current goal) are handled outside the main planning loop by
+holding their current position in $\mathcal{R}$ so that active agents plan
+around them.
+
+Each agent plans a shortest path through the space-time graph subject to the
+reservations already in $\mathcal{R}$, adds its own planned positions, and the
+next agent plans around all accumulated reservations.
+The space-time A* search uses a BFS-precomputed obstacle-aware distance table
+as the heuristic, which is admissible and tighter than Manhattan distance in
+cluttered warehouse layouts.
+
+CA* is complete under the fixed reservation constraints if the space-time graph
+is finite (i.e.\ there is always a sequence of wait actions that allows an agent
+to eventually reach its goal without conflicting with higher-priority agents).
+In practice, the random planning order does not guarantee completeness: a given
+ordering can leave a low-priority agent unable to reach its goal because earlier
+agents permanently block all routes.
+The stuck-detection mechanism described in
+Section~\ref{subsec:method_stuck} provides a practical recovery path by
+triggering path replanning when an agent fails to make progress.
+
+CA* has time complexity $O(n \cdot |\mathcal{W}| \cdot T)$ per planning
+call, where $n$ is the number of agents being planned for and $T$ is the
+planning horizon.
+It is the most computationally efficient of the three planners when the
+number of conflicts is low, since each agent requires only a single A*
+pass with no backtracking or constraint propagation.
+
+
+%% ── 3.5.3 ──────────────────────────────────────────────────────
+\subsection{Priority-Based Search (PBS)}
+\label{subsec:method_pbs}
+
+Priority-Based Search (PBS) extends the CA* idea by relaxing the fixed
+priority order.
+Rather than assigning priorities a priori, PBS attempts to find a conflict-free
+set of paths by dynamically resolving conflicts that arise during planning.
+When two agents $i$ and $j$ produce conflicting paths, PBS introduces a
+priority constraint ($i > j$ or $j > i$) and replans the lower-priority agent's
+path subject to that constraint.
+If the constraint leads to a dead end, PBS backtracks and tries the alternative
+priority ordering.
+
+PBS is complete under the assumption that a conflict-free solution exists.
+In practice, PBS tends to produce slightly shorter aggregate paths than CA*
+because it can reassign priorities to avoid unnecessary detours, at the cost of
+a higher worst-case planning time.
+For the warehouse sizes considered in this thesis ($\Na = 6$), the difference
+between CA* and PBS in both path quality and computation time is modest.
+
+
+%% ── 3.5.4 ──────────────────────────────────────────────────────
+\subsection{Rolling Horizon Collision Resolution (RHCR)}
+\label{subsec:method_rhcr}
+
+Rolling Horizon Collision Resolution (RHCR), introduced by
+\citet{li2021lifelong} for lifelong MAPF in large warehouses, addresses the
+computational challenge of planning for many agents over long horizons by
+restricting attention to a sliding time window.
+
+RHCR is parameterised by a \emph{window size} $w$ (the number of timesteps
+ahead to plan) and a \emph{replanning period} $h \leq w$ (the number of
+timesteps to execute before replanning).
+At each replanning event, all agents plan paths for the next $w$ timesteps
+using the chosen inner solver (CA* in the RHCR variant).
+After $h$ timesteps of execution, paths are replanned for the next window.
+Setting $h = w$ causes replanning only when the window is exhausted; setting
+$h < w$ enables more frequent replanning that can react to task completions
+and allocation changes within the window.
+
+RHCR decouples planning complexity from the total mission horizon: even if the
+full mission spans thousands of timesteps, each planning call only considers
+$w$ timesteps.
+This is particularly beneficial in the steady-state setting where missions have
+no defined end.
+The trade-off is that plans may be suboptimal near the window boundary, as
+agents cannot anticipate conflicts that arise just beyond $t + w$.
+
+
+%% ── 3.5.5 ──────────────────────────────────────────────────────
+\subsection{Planner Comparison}
+\label{subsec:method_planner_comparison}
+
+Table~\ref{tab:planner_comparison} summarises the three planners along four
+dimensions: completeness, optimality criterion, asymptotic time complexity per
+planning call, and scalability.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Comparison of the three path planning strategies.
+           $n$ = number of agents, $|\mathcal{W}|$ = number of free cells,
+           $T$ = planning horizon, $w$ = rolling window size.}
+  \label{tab:planner_comparison}
+  \small
+  \begin{tabular}{lcccc}
+    \toprule
+    \textbf{Planner} & \textbf{Complete} & \textbf{Optimal} &
+    \textbf{Complexity} & \textbf{Scale} \\
+    \midrule
+    CA*   & Practical & No & $O(n \cdot |\mathcal{W}| \cdot T)$ & $\leq$30 agents \\
+    PBS   & Yes       & No & $O(n! \cdot |\mathcal{W}| \cdot T)$ worst & $\leq$30 agents \\
+    RHCR  & Practical & No & $O(n \cdot |\mathcal{W}| \cdot w)$ & $\leq$100 agents \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+A key architectural advantage of the system is that the path planner is a
+configurable parameter of the \texttt{IntegrationOrchestrator}: any allocation
+method (LCBA, CBBA, SGA, or DMCHBA) can be paired with any of the three
+planners without modification.
+For the allocation comparison experiments (Sections~\ref{sec:exp_batch} and
+\ref{sec:exp_steady_state}), CA* is held fixed across all methods as an
+experimental control to isolate the effect of the allocation algorithm.
+Section~\ref{sec:exp_planners} presents a dedicated comparison of all three
+planners to characterise the throughput--compute trade-off.
+
+
+%% ── 3.6 ─────────────────────────────────────────────────────────
 \section{Dynamic Replanning via the Integration Orchestrator}
 \label{sec:method_dynamic}
 
-% This section describes the key contribution of the integration:
-% the event-driven replanning loop that ties GCBBA + path planning
-% together in real time.
 
-
-% ── 3.6.1 ──────────────────────────────────────────────────────
+%% ── 3.6.1 ──────────────────────────────────────────────────────
 \subsection{Simulation Loop and Task Lifecycle}
 \label{subsec:method_loop}
 
-% Describe the per-timestep loop and the planned→executing→
-% completed task state machine.
+The \texttt{IntegrationOrchestrator} drives the simulation through a
+per-timestep loop.
+At each timestep $t$, the following operations are executed in order:
+\begin{enumerate}
+  \item \textbf{Task injection.}
+        In steady-state mode, each induct station injects a task when at least
+        $\Delta_{\lambda} = \text{round}(1/\lambda)$ timesteps have elapsed
+        since its last injection, provided its queue depth is below $Q_{\max}$.
+        Newly injected tasks are added to the pending task set
+        $\mathcal{T}_{\text{pending}}(t)$.
+  \item \textbf{Allocation trigger check.}
+        The orchestrator checks whether any allocation trigger condition is
+        met (Section~\ref{sec:method_triggers}).
+        If so, the LCBA algorithm is invoked.
+  \item \textbf{Path planning.}
+        For each agent whose path is stale (flagged by
+        \texttt{needs\_new\_path}), a new collision-free path is computed
+        using the chosen path planner.
+  \item \textbf{Agent execution.}
+        Each agent advances one step along its planned path.
+        If an agent reaches $s_j^{\text{in}}$ while $\tau_j$ is in
+        state \textsc{Planned}, the task transitions to
+        \textsc{Executing}.
+        If the agent subsequently reaches $s_j^{\text{ej}}$, the task
+        transitions to \textsc{Completed}.
+  \item \textbf{Energy management.}
+        Agents with low energy are directed to charging stations.
+        Charging state changes trigger an allocation rerun.
+  \item \textbf{Metrics recording.}
+        Per-timestep metrics (queue depths, agent positions, task states)
+        are recorded.
+\end{enumerate}
 
-\todo{Describe the simulation step loop. Cover:
-  (1) GCBBA allocation at $t=0$;
-  (2) Per-timestep: agents execute one step along their paths;
-  (3) Task lifecycle: PLANNED $\to$ EXECUTING $\to$ COMPLETED;
-  (4) Path planning triggered by \texttt{needs\_new\_path} flag.}
+The three-state task lifecycle (\textsc{Planned} $\to$ \textsc{Executing}
+$\to$ \textsc{Completed}) is central to conflict resolution in LCBA.
+Only \textsc{Planned} tasks can be reassigned by a subsequent allocation call;
+once a task is \textsc{Executing} (agent is en route to the eject station),
+it is locked to that agent and cannot be reallocated.
+This prevents the degenerate case where an agent drops a task mid-execution
+because a competing agent bid higher on it during a reallocation.
 
 
-% ── 3.6.2 ──────────────────────────────────────────────────────
-\subsection{GCBBA Rerun Triggers}
-\label{subsec:method_triggers}
+%% ── 3.6.2 ──────────────────────────────────────────────────────
+\subsection{Allocation Trigger Conditions}
+\label{sec:method_triggers}
 
-% Describe the two trigger mechanisms:
-%   (a) Batch completion: enough tasks completed since last run
-%   (b) Stuck agent detection (replanning only, not full GCBBA)
+The LCBA allocation is invoked under five conditions, listed in priority order:
 
-\todo{Describe event-driven triggers:
-  batch threshold $= \max(2, \lfloor \Na/3 \rfloor)$
-  tasks completed since last GCBBA run;
-  cooldown $= \max(3, \lfloor r_{\text{interval}}/3 \rfloor)$
-  timesteps between reruns to prevent thrashing.
-  Justify: why NOT every timestep? Why NOT fixed interval only?}
+\begin{enumerate}
+  \item \textbf{Initialisation.} At $t = 0$ (or after a system reset),
+        allocation always runs.
+  \item \textbf{Charging state change.} When an agent starts or finishes
+        charging, its available capacity changes, justifying immediate
+        reallocation.
+  \item \textbf{New tasks and idle agents.} If new tasks have been injected
+        into $\mathcal{T}_{\text{pending}}$ and at least one agent is idle,
+        allocation is triggered immediately to minimise task wait time.
+  \item \textbf{Batch completion threshold.} If at least
+        $\max(2, \lfloor \Na/3 \rfloor)$ tasks have been completed since
+        the last allocation, and a cooldown of
+        $\max(3, \lfloor r_{\text{interval}}/3 \rfloor)$ timesteps has
+        elapsed, allocation is triggered.
+        The batch threshold prevents excessive replanning when tasks complete
+        in rapid succession; the cooldown prevents thrashing.
+  \item \textbf{Idle agents with pending tasks.}
+        If idle agents exist and pending tasks are waiting, allocation is
+        triggered after the cooldown period, ensuring that agents do not sit
+        idle while work is available.
+\end{enumerate}
+
+Triggering conditions 3--5 are subject to the cooldown, which limits the
+replanning rate and avoids the computational cost of running LCBA at every
+timestep.
+The value $r_{\text{interval}} = 50$ timesteps is the canonical cooldown used
+in the dynamic experiments; Section~\ref{sec:exp_sensitivity} evaluates
+sensitivity to this choice.
 
 
-% ── 3.6.3 ──────────────────────────────────────────────────────
-\subsection{Static vs.\ Dynamic GCBBA}
-\label{subsec:method_static_dynamic}
+%% ── 3.6.3 ──────────────────────────────────────────────────────
+\subsection{The Rerun Interval as a Fallback Trigger}
+\label{subsec:method_rerun_interval}
 
-% Define the two configurations you compare experimentally.
+LCBA is inherently event-driven: allocation is triggered by task completions,
+charging state changes, and idle-agent conditions
+(Section~\ref{sec:method_triggers}).
+In practice these events fire frequently enough that periodic time-based
+reallocation is unnecessary under normal operation.
+The \emph{rerun interval} $r_{\text{interval}}$ serves purely as a
+\emph{safety-net fallback}: if none of the primary triggers have fired for
+$r_{\text{interval}}$ timesteps and pending tasks exist, allocation runs
+regardless.
+This prevents the degenerate case where all agents are simultaneously in
+transit (no completions, no idle agents) and a newly injected task stalls
+indefinitely.
 
-\todo{Define:
-  \textbf{Static GCBBA}: allocation runs once at $t=0$,
-    \texttt{rerun\_interval} = $\infty$;
-  \textbf{Dynamic GCBBA}: allocation reruns on batch completion
-    events, \texttt{rerun\_interval} = 50 (canonical value).
-  Explain why static fails on disconnected graphs: agents
-  in isolated components receive no task assignments.}
+Section~\ref{sec:exp_sensitivity} presents a sensitivity sweep over
+$r_{\text{interval}}$ and confirms that performance is insensitive to the
+exact value within a wide range, validating the canonical choice of
+$r_{\text{interval}} = 50$ timesteps.
 
 
-% ── 3.6.4 ──────────────────────────────────────────────────────
+%% ── 3.6.4 ──────────────────────────────────────────────────────
 \subsection{Stuck Agent Detection and Recovery}
 \label{subsec:method_stuck}
 
-% The stuck threshold mechanism and what it does (triggers path
-% replanning, not GCBBA rerun).
+An agent is classified as \emph{stuck} when its position has not changed for
+$\theta_{\text{stuck}} = 15$ consecutive timesteps while it holds a task
+assignment.
+This condition detects situations where the path planner has assigned a path
+that the agent cannot execute due to a persistent conflict with a
+higher-priority agent. This is a failure mode that arises in priority-based planners
+when priorities create a cyclic dependency.
 
-\todo{Describe stuck detection: agent is stuck if
-  \texttt{position\_history[-stuck\_threshold:]} shows no movement
-  while not idle. Recovery: \texttt{needs\_new\_path = True}
-  triggers path replanning for that agent. Explain why this does
-  NOT trigger a full GCBBA rerun (computational cost vs benefit).}
+When an agent is detected as stuck, its \texttt{needs\_new\_path} flag is set,
+triggering path replanning at the next timestep.
+Crucially, stuck detection does \emph{not} trigger a full LCBA rerun: the
+computational cost of rerunning the full consensus protocol is not warranted
+when the underlying assignment is still valid.
+Replanning the path alone, with the stuck agent's priority temporarily elevated,
+is sufficient to break the deadlock in the vast majority of cases observed
+during evaluation.
 
 
-% ── 3.7 ─────────────────────────────────────────────────────────
+%% ── 3.7 ─────────────────────────────────────────────────────────
 \section{Baseline Methods}
 \label{sec:method_baselines}
 
-% Brief descriptions of what SGA and CBBA do and how they are
-% implemented. The point is that all three methods share the same
-% collision avoidance pipeline -- ensuring fair comparison.
+Three baseline allocation algorithms are compared against LCBA.
+Because the path planner is a configurable, interchangeable component, any
+baseline can be evaluated with any of the three planners.
+For the allocation comparison experiments the planner is held fixed at CA*
+across all methods, using the same \texttt{IntegrationOrchestrator}
+infrastructure, so that any performance differences are attributable solely to
+the allocation strategy.
 
-\todo{Describe:
-  \textbf{SGA}: centralised sequential greedy; best agent-task pair
-    selected one at a time; runs independently per connected component
-    on disconnected graphs (generous to SGA -- acknowledge this);
-  \textbf{CBBA}: standard CBBA with local (not global) consensus;
-    no replanning (\texttt{rerun\_interval} = $\infty$).
-  Emphasise: all baselines share the same prioritised A* collision
-  avoidance pipeline, isolating task allocation as the variable.}
+\textbf{Sequential Greedy Algorithm (SGA).}
+SGA is the centralised optimality reference.
+At each allocation call, SGA iterates over all (agent, task) pairs in
+descending order of marginal gain and greedily assigns each task to the best
+available agent, updating each agent's projected position before the next
+assignment.
+SGA achieves the 50\%-optimality guarantee under DMG
+utilities~\cite{fisher1978analysis} --- that is, SGA's assignment value is
+guaranteed to be at least 50\% of the optimal assignment value.
+On disconnected graphs, SGA runs independently within each connected component,
+which is a generous assumption --- a centralised algorithm would, in practice,
+have no knowledge of the existence or content of isolated components.
+This makes SGA a conservative upper bound on achievable performance.
+SGA does not replan between allocation calls; it is re-invoked at the same
+triggering events as LCBA for a fair comparison.
+
+\textbf{Consensus-Based Bundle Algorithm (CBBA).}
+CBBA~\cite{choi2009consensus} is the direct predecessor of GCBBA.
+It uses the same bundle building procedure as LCBA but replaces the $2D$-round
+global consensus with a single round of local information exchange.
+This makes CBBA computationally cheaper per call but at the cost of convergence
+guarantees on non-fully-connected graphs.
+CBBA is evaluated in its static configuration (allocation at $t=0$ only),
+consistent with its original design for batch task settings.
+Dynamic CBBA is not evaluated separately since CBBA's local consensus already
+prevents it from correctly resolving conflicts that span disconnected components,
+making dynamic reallocation less meaningful.
+
+\textbf{Distributed Matching by Clone Hungarian-Based Algorithm (DMCHBA).}
+DMCHBA~\cite{samiei2024dmchba} is a state-of-the-art decentralised task
+allocation method based on distributed Hungarian matching.
+It is included as the primary competing baseline from recent literature.
+DMCHBA provides strong performance guarantees on connected graphs but, like
+CBBA, has not been designed for the dynamic, disconnected communication
+settings that characterise the LCBA evaluation.
 
 
-% ── 3.8 ─────────────────────────────────────────────────────────
+%% ── 3.8 ─────────────────────────────────────────────────────────
 \section{Design Decisions and Rationale}
 \label{sec:method_design}
 
-% A synthesis section that explicitly names the key design choices
-% and briefly justifies each. Helpful for your defence.
+This section explicitly names the key design choices and the rationale behind
+each, to aid reproducibility and to anticipate questions about the scope of
+the experimental evaluation.
 
-\todo{List and justify key design decisions:
-  (1) Hybrid decentralised allocation / centralised path planning;
-  (2) Batch-threshold replanning trigger over fixed-interval;
-  (3) BFS distance tables over Euclidean distance;
-  (4) Max-component diameter for disconnected graphs;
-  (5) Goal reservation without unlimited future locking.}
+\textbf{Hybrid decentralised allocation / centralised path planning.}
+As argued in Section~\ref{sec:method_overview}, task allocation is kept
+decentralised to faithfully model communication constraints, while path planning
+is centralised to avoid the added complexity of distributed reservation table
+synchronisation.
+This is a deliberate choice to isolate the allocation variable in experiments.
+A fully decentralised path planner (such as distributed PIBT) would be an
+interesting extension but is out of scope for this thesis.
+
+\textbf{Batch-threshold replanning triggers over fixed-interval.}
+A fixed-interval replanning trigger (every $k$ timesteps) would cause
+unnecessary reallocation when no task completions have occurred, and would
+delay reallocation when many tasks complete in a burst.
+The batch-threshold trigger (Section~\ref{sec:method_triggers}) is more
+responsive: it fires as soon as enough state has changed to justify the
+computational cost of a full LCBA run.
+
+\textbf{BFS distance tables over Euclidean distance.}
+Euclidean distance is $O(1)$ to compute but systematically incorrect in
+shelved environments.
+The one-time $O(|\mathcal{W}|^2)$ BFS precomputation pays for itself
+immediately: bid computation for all subsequent timesteps is $O(1)$
+per (agent, task) pair with accurate distances, compared to $O(|\mathcal{W}|)$
+per pair for on-demand shortest-path computation.
+
+\textbf{Maximum component diameter for disconnected graphs.}
+Using the maximum diameter across all components ensures that the consensus
+protocol converges within each component.
+An alternative --- using the diameter of the largest component only --- would
+fail to converge in small isolated components whose diameter exceeds the
+planned number of consensus rounds.
+
+\textbf{Goal reservation without unlimited future locking.}
+Reserving a delivery cell only from the agent's arrival time until task
+completion (rather than reserving it indefinitely) allows other agents to pass
+through the cell after the task is marked complete.
+Unlimited locking was tested early in development and caused unnecessary
+detours that degraded throughput by up to 15\% in high-load configurations.
