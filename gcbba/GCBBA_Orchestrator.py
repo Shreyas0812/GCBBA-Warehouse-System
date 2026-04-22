@@ -86,24 +86,20 @@ class GCBBA_Orchestrator:
         total_consensus_rounds = 0
 
         for iter in range(nb_iter):
+            # Bundle creation phase — all agents per paper Algorithm 1
             for i in range(self.na):
-                # Bundle creation phase
-                if self.agents[i].converged == False:
-                    self.agents[i].create_bundle()
-            
-            # Consensus phase
+                self.agents[i].create_bundle()
+
+            # Consensus phase — all agents per paper Algorithm 1
+            # Skipping converged agents causes stale state if they are later evicted
+            # by a non-converged agent's conflict resolution.
             for consensus_num in range(nb_cons):
-                # all_agents = copy.deepcopy(self.agents)
                 all_agents = [agent.snapshot() for agent in self.agents]
                 consensus_iter = nb_cons * iter + consensus_num
-                if consensus_num == nb_cons - 1:
-                    consensus_index_last = True
-                else:
-                    consensus_index_last = False
-                
+                consensus_index_last = (consensus_num == nb_cons - 1)
+
                 for i in range(self.na):
-                    if self.agents[i].converged == False:
-                        self.agents[i].resolve_conflicts(all_agents, consensus_iter=consensus_iter, consensus_index_last=consensus_index_last)
+                    self.agents[i].resolve_conflicts(all_agents, consensus_iter=consensus_iter, consensus_index_last=consensus_index_last)
             
             assignment, bid, max_time = self.gather_info()
             self.assig_history.append(assignment)
@@ -111,8 +107,9 @@ class GCBBA_Orchestrator:
             self.max_times.append(max_time)
             total_consensus_rounds += nb_cons
 
-            all_converged = np.all([agent.converged for agent in self.agents])
-            if all_converged and self.cvg_iter == self.nt:
+            # Paper Algorithm 1: break when ANY agent detects global convergence
+            any_converged = np.any([agent.converged for agent in self.agents])
+            if any_converged:
                 self.cvg_iter = iter + 1
                 break
 

@@ -48,6 +48,15 @@ class CBBA_Agent(GCBBA_Agent):
             for task_id in filtered_task_ids:
                 task_idx = self._get_task_index(task_id)
                 c, opt_place = self.compute_c(task_id)
+
+                if self.energy is not None and c > self.min_val:
+                    first_task_id = task_id if int(opt_place) == 0 else self.p[0]
+                    first_task = self.tasks[self._get_task_index(first_task_id)]
+                    energy_for_first = self._get_distance(first_task.induct_pos, first_task.induct_grid, first_task.eject_pos, first_task.eject_grid)
+                    charger_margin = self._charger_dist_from_pos(first_task.eject_grid)
+                    if self.energy < int((energy_for_first + charger_margin) * 1.1):
+                        c = self.min_val  # Can't afford task — don't bid
+
                 self.c[task_idx] = c
                 optimal_placement[task_idx] = opt_place
 

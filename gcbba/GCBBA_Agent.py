@@ -73,9 +73,6 @@ class GCBBA_Agent:
         # self.Wa = []
         # # List to maintain tasks before insertion
         self.placement = []
-        # Has agent won previous bid? (used for reusing previous path)
-        self.flag_won = True
-        # # size of path at previous iteration
         self.len_p_before = 0
 
         # task_id to index mapping
@@ -112,37 +109,22 @@ class GCBBA_Agent:
             return
         
         filtered_task_ids = [t.id for t in self.tasks if t.id not in self.p]
-        
-        if self.flag_won == True:
-            self.placement = np.zeros(self.nt)
-            for task_id in filtered_task_ids:
-                task_idx = self._get_task_index(task_id)
-                c, opt_place = self.compute_c(task_id) # c_ij(p_i) = S_i(p_i ⊕_opt j) - S_i(p_i)
 
-                # Energy feasibility: verify the agent can execute the first task in the
-                # proposed bundle and still reach a charger afterward.
-                # We check only the first task because GCBBA replans between task
-                # executions — by the time task N executes, the agent will have
-                # recharged and been reallocated. Full-bundle feasibility is too strict:
-                # agents are expected to charge mid-bundle, so the only guarantee needed
-                # at bid time is that the immediately next task is affordable.
-                if self.energy is not None and c > self.min_val:
-                    # proposed_path[0] is task_id when inserting at position 0,
-                    # otherwise it's self.p[0] — no need to build the full list.
-                    first_task_id = task_id if int(opt_place) == 0 else self.p[0]
-                    first_task = self.tasks[self._get_task_index(first_task_id)]
-                    energy_for_first = (
-                        self._get_distance(self.pos, self.pos_grid, first_task.induct_pos, first_task.induct_grid)
-                        + self._get_distance(first_task.induct_pos, first_task.induct_grid, first_task.eject_pos, first_task.eject_grid)
-                    )
-                    charger_margin = self._charger_dist_from_pos(first_task.eject_grid)
-                    if self.energy < int((energy_for_first + charger_margin) * 1.1):
-                        c = self.min_val  # Can't afford even the first task — don't bid
+        self.placement = np.zeros(self.nt)
+        for task_id in filtered_task_ids:
+            task_idx = self._get_task_index(task_id)
+            c, opt_place = self.compute_c(task_id) # c_ij(p_i) = S_i(p_i ⊕_opt j) - S_i(p_i)
 
-                self.c[task_idx] = c
-                self.placement[task_idx] = opt_place
-        
-        # Retain previous bids if agent did not win last time
+            if self.energy is not None and c > self.min_val:
+                first_task_id = task_id if int(opt_place) == 0 else self.p[0]
+                first_task = self.tasks[self._get_task_index(first_task_id)]
+                energy_for_first = self._get_distance(first_task.induct_pos, first_task.induct_grid, first_task.eject_pos, first_task.eject_grid)
+                charger_margin = self._charger_dist_from_pos(first_task.eject_grid)
+                if self.energy < int((energy_for_first + charger_margin) * 1.1):
+                    c = self.min_val  # Can't afford even the first task — don't bid
+
+            self.c[task_idx] = c
+            self.placement[task_idx] = opt_place
         
         bids = []
         for j in range(self.nt):
@@ -410,7 +392,7 @@ class GCBBA_Agent:
                 neigh_cvg[i] = neigh_cvg[i] and neigh.their_net_cvg[i-1]
             
         # Update convergence observation
-        self.their_net_cvg[0] = (self.z == self.z_before)
+        self.their_net_cvg[0] = np.array_equal(self.z, self.z_before)
         for i in range(1, self.D + 1):
             self.their_net_cvg[i] = neigh_cvg[i] and self.their_net_cvg[i-1]
         
@@ -421,7 +403,6 @@ class GCBBA_Agent:
         
         if consensus_index_last:
             self.z_before = copy.deepcopy(self.z)
-            self.flag_won = (len(self.p) != self.len_p_before)
             self.len_p_before = len(self.p)
 
 
@@ -439,9 +420,7 @@ class GCBBA_Agent:
 
         bundle = self.b
         # if task is in own bundle, remove it and all subsequent tasks
-        if task_id in bundle:                           
-            self.flag_won = False
-
+        if task_id in bundle:
             # position of task in bundle, remove from there onwards
             bundle_index = bundle.index(task_id)
             tasks_to_remove = bundle[bundle_index:]

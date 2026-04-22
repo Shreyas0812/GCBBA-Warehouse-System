@@ -492,7 +492,7 @@ class IntegrationOrchestrator:
         na = len(active_agent_indices)
         nt_active = len(active_char_t)
         if self.Lt is None:
-            Lt = int(np.ceil(nt_active / na))
+            Lt = max(3, int(np.ceil(nt_active / na)))
         else:
             Lt = self.Lt
         

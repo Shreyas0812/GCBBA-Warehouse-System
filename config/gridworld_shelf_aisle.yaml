@@ -217,7 +217,7 @@ create_gridworld_node:
       max_energy: 460
       charge_duration: 40
       charge_rate: 1
-      charging_trigger_multiplier: 3.0
+      charging_trigger_multiplier: 3.5
 
     # Charging stations: left highway, 2 columns (x=8,10), spaced every 3rd aisle
     charging_stations: [
