@@ -69,6 +69,7 @@ class IntegrationOrchestrator:
                  path_planner: str = "ca_star",          # "ca_star", "rhcr", or "pbs"
                  rhcr_replanning_period: int = None,    # h parameter; defaults to window_size (h=w)
                  allocation_timeout_s: Optional[float] = None,  # max seconds per allocation call; None = unlimited
+                 idle_return_home_after: int = 25,
                  ) -> None:
 
         if allocation_method not in {"gcbba", "sga", "cbba", "dmchba"}:
@@ -88,6 +89,7 @@ class IntegrationOrchestrator:
         self.max_plan_time = max_plan_time
         self.Lt = Lt
         self.allocation_timeout_s = allocation_timeout_s
+        self.idle_return_home_after = idle_return_home_after
 
         self.grid_map = GridMap(config_path)
         _planners = {"ca_star": CooperativeAStar, "rhcr": RHCRCAStar, "pbs": PriorityBasedSearch}
@@ -357,16 +359,7 @@ class IntegrationOrchestrator:
 
         for task_id in completed_task_ids:
             self.completed_task_ids.add(task_id)
-
-        # Warn if any agent's energy hit 0 while navigating to charger —
-        # indicates the 20% buffer was insufficient (likely due to congestion).
-        for ast in self.agent_states:
-            if ast.energy == 0 and ast.is_navigating_to_charger:
-                tqdm.write(
-                    f"[t={self.current_timestep}] WARNING: Agent {ast.agent_id} energy "
-                    f"depleted to 0 at {ast.get_position()} while navigating to charger — "
-                    f"consider increasing the charging buffer."
-                )
+            self._pending_task_ids.discard(task_id)
 
         # Energy and Charging Logic
         newly_available_agents = [
@@ -375,10 +368,6 @@ class IntegrationOrchestrator:
         ]
         newly_charging_agents = self._check_and_start_charging()
 
-        if newly_available_agents:
-            tqdm.write(f"Agents finished charging at timestep {self.current_timestep}: {newly_available_agents}")
-        if newly_charging_agents:
-            tqdm.write(f"Agents starting to charge at timestep {self.current_timestep}: {newly_charging_agents}")
         if newly_charging_agents or newly_available_agents:
             self.run_allocation()
 
@@ -387,6 +376,8 @@ class IntegrationOrchestrator:
             if any(a.is_idle and not a.is_charging and not a.is_navigating_to_charger
                    for a in self.agent_states):
                 self.run_allocation()
+
+        self._dispatch_idle_agents_home()
 
         self._plan_paths()
 
@@ -587,7 +578,19 @@ class IntegrationOrchestrator:
             self.agent_states[i].update_from_gcbba([], self.current_timestep)
         
         self.last_gcbba_timestep = self.current_timestep
-        self._completed_at_last_gcbba = len(self.completed_task_ids)  # Update the count of completed tasks at the time of this GCBBA run
+        self._completed_at_last_gcbba = len(self.completed_task_ids)
+
+        # Orphan detection: any task not completed and not in any agent's queue
+        # should be in _pending_task_ids so Trigger 2 can pick it up.
+        claimed_ids = set()
+        for ast in self.agent_states:
+            if ast.current_task is not None:
+                claimed_ids.add(ast.current_task.task_id)
+            for t in ast.planned_tasks:
+                claimed_ids.add(t.task_id)
+        for tid in self.all_task_ids:
+            if tid not in self.completed_task_ids and tid not in claimed_ids:
+                self._pending_task_ids.add(tid)
 
     def _get_executing_task_ids(self) -> Set[int]:
         executing_task_ids = set()
@@ -672,6 +675,8 @@ class IntegrationOrchestrator:
                             f"+ eject ({dist_induct_to_eject}) + charger ({charger_dist}) = {energy_needed}. "
                             f"Dropping task {aborted_task_id} before starting induct leg."
                         )
+                        for t in agent_state.planned_tasks:
+                            self._pending_task_ids.add(t.task_id)
                         agent_state.start_charging(charger_pos)
                         self._pending_task_ids.add(aborted_task_id)
                         induct_idx = self._task_to_induct.get(aborted_task_id)
@@ -702,6 +707,8 @@ class IntegrationOrchestrator:
                             f"charger ({charger_dist_from_eject} steps). "
                             f"Aborting task {aborted_task_id}, redirecting to charger."
                         )
+                        for t in agent_state.planned_tasks:
+                            self._pending_task_ids.add(t.task_id)
                         agent_state.start_charging(charger_pos_from_eject)
                         # Re-queue the aborted task so allocation triggers correctly
                         self._pending_task_ids.add(aborted_task_id)
@@ -807,6 +814,28 @@ class IntegrationOrchestrator:
         dist, pos = self._get_nearest_charger_from_pos(agent_pos)
         return (dist if dist is not None else 0), pos
 
+    def _dispatch_idle_agents_home(self) -> None:
+        """
+        If an agent has no current/planned tasks for several timesteps, send it
+        back to its initial position to avoid blocking high-value cells (e.g., ejects).
+        """
+        if self.idle_return_home_after <= 0:
+            return
+
+        for agent_state in self.agent_states:
+            if agent_state.is_charging or agent_state.is_navigating_to_charger:
+                continue
+            if agent_state.current_task is not None or len(agent_state.planned_tasks) > 0:
+                continue
+            if agent_state.is_returning_home:
+                continue
+            if agent_state.get_position() == agent_state.initial_position:
+                continue
+            if agent_state.idle_without_tasks_steps < self.idle_return_home_after:
+                continue
+
+            agent_state.start_returning_home()
+
     def _check_and_start_charging(self) -> List[int]:
         """
         Check if any agents need to start charging and update their state accordingly.
@@ -832,6 +861,11 @@ class IntegrationOrchestrator:
                 continue
 
             if agent_state.needs_charging(dist, multiplier=self.charging_trigger_multiplier):
+                # Re-queue tasks about to be dropped so _detect_events() can reassign them
+                if agent_state.current_task is not None:
+                    self._pending_task_ids.add(agent_state.current_task.task_id)
+                for t in agent_state.planned_tasks:
+                    self._pending_task_ids.add(t.task_id)
                 agent_state.start_charging(nearest_charging_station, charge_duration=self.charge_duration)
                 newly_charging_agents.append(agent_state.agent_id)
 

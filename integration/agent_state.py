@@ -41,6 +41,7 @@ class AgentState:
     def __init__(self, agent_id: int, initial_position: Tuple[int, int, int], speed: float = 1.0, max_energy: int = 100, charge_rate: int = 1):
         self.agent_id = agent_id
         self.pos = np.array(initial_position, dtype=np.int32)
+        self.initial_position: Tuple[int, int, int] = tuple(int(v) for v in initial_position)
         self.speed = speed
 
         # Task Lifecycle Management
@@ -73,6 +74,8 @@ class AgentState:
 
         self.current_timestep: int = 0
         self.wait_counter: int = 0  # total timesteps spent blocked (used for deadlock-break priority)
+        self.idle_without_tasks_steps: int = 0
+        self.is_returning_home: bool = False
 
     def update_from_gcbba(self, assigned_tasks: List[Dict], current_timestep: int):
         """
@@ -81,6 +84,11 @@ class AgentState:
         - current_timestep: Current simulation timestamp for timing info
         """
         self.current_timestep = current_timestep
+
+        if assigned_tasks:
+            # Allocation has real work for this agent; stop any idle repositioning.
+            self.is_returning_home = False
+            self.idle_without_tasks_steps = 0
 
         executing_task_id = self.current_task.task_id if self.current_task else None
 
@@ -99,6 +107,7 @@ class AgentState:
             )
             new_planned_tasks.append(task_info)
 
+        # Planned queue follows the latest assignment output from allocator.
         self.planned_tasks = new_planned_tasks
 
         if self.is_idle and len(self.planned_tasks) > 0:
@@ -127,6 +136,21 @@ class AgentState:
             self.needs_new_path = False
             return
 
+        # Idle repositioning path (no task attached)
+        if self.is_returning_home and self.current_task is None and len(self.planned_tasks) == 0:
+            if len(path) > 1 and tuple(path[0]) == self.get_position():
+                path = path[1:]
+            if not path or (len(path) == 1 and tuple(path[0]) == self.get_position()):
+                self.current_path = None
+                self.current_path_index = 0
+                self.needs_new_path = False
+                self.is_returning_home = (self.get_position() != self.initial_position)
+                return
+            self.current_path = path
+            self.current_path_index = 0
+            self.needs_new_path = False
+            return
+
         if self.current_task is None and len(self.planned_tasks) > 0:
             # Start executing the first planned task
             self.current_task = self.planned_tasks.pop(0)
@@ -138,6 +162,14 @@ class AgentState:
             if len(path) > 1 and tuple(path[0]) == self.get_position():
                 # If the provided path starts with the agent's current position, skip the first point
                 path = path[1:]
+
+            # Reject empty/trivial execution paths. Otherwise the agent can keep a
+            # current_task forever while step() returns early on len(path)==0.
+            if not path or (len(path) == 1 and tuple(path[0]) == self.get_position()):
+                self.current_path = None
+                self.current_path_index = 0
+                self.needs_new_path = True
+                return
 
             # Update the current task with the new path and reset path index
             self.current_task.path = path
@@ -160,6 +192,17 @@ class AgentState:
         """
 
         self.current_timestep = timestep
+
+        if (
+            self.current_task is None
+            and len(self.planned_tasks) == 0
+            and not self.is_charging
+            and not self.is_navigating_to_charger
+            and not self.is_returning_home
+        ):
+            self.idle_without_tasks_steps += 1
+        else:
+            self.idle_without_tasks_steps = 0
 
         # Move to Charging
         if self.is_navigating_to_charger:
@@ -224,16 +267,24 @@ class AgentState:
                     self.current_path_index = 0
                     self.needs_new_path = True
                     return False
-                if self.task_phase == "to_induct":
+                if self.current_task is not None and self.task_phase == "to_induct":
                     # Arrived at induct station, now need path to eject station
                     self.task_phase = "to_eject"
                     self.current_path = None
                     self.current_path_index = 0
                     self.needs_new_path = True
                     return False
-                elif self.task_phase == "to_eject":
+                elif self.current_task is not None and self.task_phase == "to_eject":
                     # Arrived at eject station, task is complete
                     return self._complete_current_task(timestep)
+
+                # Idle repositioning completed
+                if self.is_returning_home and self.current_task is None:
+                    self.current_path = None
+                    self.current_path_index = 0
+                    self.needs_new_path = False
+                    self.is_returning_home = False
+                    return False
         
         return False
 
@@ -302,6 +353,9 @@ class AgentState:
                 return self.current_task.induct_pos
             elif self.task_phase == "to_eject":
                 return self.current_task.eject_pos
+
+        if self.is_returning_home:
+            return self.initial_position
 
         elif len(self.planned_tasks) > 0:
             return self.planned_tasks[0].induct_pos
@@ -403,6 +457,15 @@ class AgentState:
         self.task_phase = "to_induct"
         self.is_idle = False
         self.needs_new_path = True # Need new path to navigate to charger
+        self.is_returning_home = False
+        self.idle_without_tasks_steps = 0
+
+    def start_returning_home(self) -> None:
+        """Begin idle repositioning to the initial spawn location."""
+        self.is_returning_home = True
+        self.needs_new_path = True
+        self.current_path = None
+        self.current_path_index = 0
 
     def step_charging(self, charge_per_timestep: int = 1) -> bool:
         """
