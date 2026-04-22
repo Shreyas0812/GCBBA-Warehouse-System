@@ -692,7 +692,7 @@ class IntegrationOrchestrator:
                 # trigger fires on the same timestep and reallocates it without delay.
                 if charger_pos_from_eject is not None:
                     energy_to_survive = dist_to_eject + charger_dist_from_eject
-                    if agent_state.energy < int(energy_to_survive * 1.3):
+                    if agent_state.energy < int(energy_to_survive * 1.1):
                         aborted_task_id = agent_state.current_task.task_id
                         tqdm.write(
                             f"[t={self.current_timestep}] Agent {agent_state.agent_id}: energy "
