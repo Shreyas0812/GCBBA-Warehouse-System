@@ -86,7 +86,7 @@ def get_experiment_configs(
         # Knee (1×) and a heavy-load point (2×) only
         ss_capacity_fracs = [1.0, 2.0]
 
-        batch_fracs = [0.2, 1.0]  # 20% of batch capacity and full batch capacity
+        batch_fracs = [0.2, 0.5]  # 20% of batch capacity and full batch capacity
 
     else:  # full
         seeds = [42, 123, 456]
