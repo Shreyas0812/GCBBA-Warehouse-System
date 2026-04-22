@@ -129,10 +129,10 @@ create_gridworld_node:
     ]
 
     energy:
-      max_energy: 205
+      max_energy: 500
       charge_duration: 30
       charge_rate: 1
-      charging_trigger_multiplier: 3.5
+      charging_trigger_multiplier: 5.0
 
     # Charging stations inside maintenance bay (x=64), 4-cell spacing, 12 stations
     # Cells overwrite obstacle marking, accessible from x=63
