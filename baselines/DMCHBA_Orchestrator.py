@@ -86,7 +86,7 @@ class DMCHBA_Orchestrator:
         self.bid_history = []
         self.max_times = []
 
-    def launch_agents(self, method=None, detector=None):
+    def launch_agents(self, method=None, detector=None, timeout_s=None):
         """
         Run DMCHBA for task allocation.
         Returns:
@@ -94,6 +94,7 @@ class DMCHBA_Orchestrator:
             total_score: Total score of the assignment (negative total cost).
             makespan: Time taken to compute the assignment.
         """
+        self._deadline = time.perf_counter() + timeout_s if timeout_s is not None else None
         G_nx = nx.from_numpy_array(self.G)
         components = list(nx.connected_components(G_nx))
 
@@ -223,6 +224,8 @@ class DMCHBA_Orchestrator:
         improved = True
 
         while improved:
+            if getattr(self, '_deadline', None) is not None and time.perf_counter() > self._deadline:
+                break
             improved = False
             for i in range(1, n - 1):
                 for j in range(i + 1, n):

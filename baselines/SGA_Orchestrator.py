@@ -71,10 +71,11 @@ class SGA_Orchestrator:
         self.bid_history = []
         self.max_times = []
 
-    def launch_agents(self, method=None, detector=None):
+    def launch_agents(self, method=None, detector=None, timeout_s=None):
         """
         Running SGA allocation
         """
+        self._deadline = time.perf_counter() + timeout_s if timeout_s is not None else None
         G_nx = nx.from_numpy_array(self.G)
         components = list(nx.connected_components(G_nx))
 
@@ -129,6 +130,8 @@ class SGA_Orchestrator:
 
         for _ in range(Nmin):
             if not available_tasks:
+                break
+            if self._deadline is not None and time.perf_counter() > self._deadline:
                 break
 
             best_bid = -float('inf')

@@ -33,7 +33,6 @@ class MetricsOrchestrator(IntegrationOrchestrator):
 
     def __init__(self, *args, **kwargs):
         self._wall_time_limit_s: Optional[float] = kwargs.pop("wall_clock_limit_s", None)
-        kwargs.pop("allocation_timeout_s", None)
         super().__init__(*args, **kwargs)
 
         self._hit_wall_clock_ceiling: bool = False

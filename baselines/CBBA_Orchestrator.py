@@ -63,7 +63,7 @@ class CBBA_Orchestrator:
             self.agents.append(CBBA_Agent(id=i, G=self.G, char_a=self.char_a[i], tasks=self.tasks, Lt=self.Lt, start_time=self.start_time, metric=self.metric, D=self.D, grid_map=self.grid_map,
                                           energy=energy, charging_station_grids=self.charging_station_grids))
 
-    def launch_agents(self, method=None, detector=None):
+    def launch_agents(self, method=None, detector=None, timeout_s=None):
         """
         Launch CBBA
 
@@ -79,8 +79,11 @@ class CBBA_Orchestrator:
         nb_iter = Nmin * D
         nb_cons = 1
         total_consensus_rounds = 0
+        _deadline = time.perf_counter() + timeout_s if timeout_s is not None else None
 
         for iteration in range(nb_iter):
+            if _deadline is not None and time.perf_counter() > _deadline:
+                break
             # Phase 1: Bundle Building
             for agent in self.agents:
                 agent.create_bundle()

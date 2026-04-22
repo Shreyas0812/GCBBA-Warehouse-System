@@ -68,6 +68,7 @@ class IntegrationOrchestrator:
                  allocation_method: str = "gcbba",  # "gcbba", "sga", "cbba" or "dmchba"
                  path_planner: str = "ca_star",          # "ca_star", "rhcr", or "pbs"
                  rhcr_replanning_period: int = None,    # h parameter; defaults to window_size (h=w)
+                 allocation_timeout_s: Optional[float] = None,  # max seconds per allocation call; None = unlimited
                  ) -> None:
 
         if allocation_method not in {"gcbba", "sga", "cbba", "dmchba"}:
@@ -86,6 +87,7 @@ class IntegrationOrchestrator:
         self.prediction_horizon = prediction_horizon
         self.max_plan_time = max_plan_time
         self.Lt = Lt
+        self.allocation_timeout_s = allocation_timeout_s
 
         self.grid_map = GridMap(config_path)
         _planners = {"ca_star": CooperativeAStar, "rhcr": RHCRCAStar, "pbs": PriorityBasedSearch}
@@ -373,10 +375,10 @@ class IntegrationOrchestrator:
         ]
         newly_charging_agents = self._check_and_start_charging()
 
-        # if newly_available_agents:
-        #     tqdm.write(f"Agents finished charging at timestep {self.current_timestep}: {newly_available_agents}")
-        # if newly_charging_agents:
-        #     tqdm.write(f"Agents starting to charge at timestep {self.current_timestep}: {newly_charging_agents}")
+        if newly_available_agents:
+            tqdm.write(f"Agents finished charging at timestep {self.current_timestep}: {newly_available_agents}")
+        if newly_charging_agents:
+            tqdm.write(f"Agents starting to charge at timestep {self.current_timestep}: {newly_charging_agents}")
         if newly_charging_agents or newly_available_agents:
             self.run_allocation()
 
@@ -525,7 +527,7 @@ class IntegrationOrchestrator:
                                             grid_map=self.grid_map, agent_energies=agent_energies,
                                             charging_station_grids=self.charging_station_grid_positions)
 
-        assignment, total_score, makespan = allocator.launch_agents()
+        assignment, total_score, makespan = allocator.launch_agents(timeout_s=self.allocation_timeout_s)
 
         if hasattr(allocator, 'total_consensus_rounds'):
             self._last_consensus_rounds = allocator.total_consensus_rounds
@@ -541,14 +543,14 @@ class IntegrationOrchestrator:
 
         allocation_time_ms = (t_allocation_end - t_allocation_start) * 1000
 
-        # tqdm.write(
-        #     f"[t={self.current_timestep}] {self.allocation_method.upper()}: "
-        #     f"{nt_active} active tasks, "
-        #     f"{len(excluded_task_ids)} excluded "
-        #     f"({len(self.completed_task_ids)} done, "
-        #     f"{len(executing_task_ids)} executing). "
-        #     f"Score={total_score:.2f}, Makespan={makespan:.2f}, Time={allocation_time_ms:.2f}ms"
-        # )
+        tqdm.write(
+            f"[t={self.current_timestep}] {self.allocation_method.upper()}: "
+            f"{nt_active} active tasks, "
+            f"{len(excluded_task_ids)} excluded "
+            f"({len(self.completed_task_ids)} done, "
+            f"{len(executing_task_ids)} executing). "
+            f"Score={total_score:.2f}, Makespan={makespan:.2f}, Time={allocation_time_ms:.2f}ms"
+        )
         
         # If a timeout cancelled this call, bail out before mutating any state.
         # The zombie thread may still reach this point after the main thread moved on.

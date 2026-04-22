@@ -71,11 +71,12 @@ class GCBBA_Orchestrator:
                            start_time=self.start_time, metric=self.metric, D=self.D, grid_map=self.grid_map,
                            energy=energy, charging_station_grids=self.charging_station_grids))
     
-    def launch_agents(self, method="global", detector="decentralized"):
+    def launch_agents(self, method="global", detector="decentralized", timeout_s=None):
         """
         Launch GCBBA allocation algorithm
         :param method: "baseline" or "global"
         :param detector: "none", "centralized", or "decentralized"
+        :param timeout_s: max wall-clock seconds to run; None = unlimited
         :return: allocation, minsum, makespan
         """
         D = self.D
@@ -84,8 +85,11 @@ class GCBBA_Orchestrator:
         nb_iter = Nmin # number of main iterations
         nb_cons = 2*D  # number of consensus rounds per iteration
         total_consensus_rounds = 0
+        _deadline = time.perf_counter() + timeout_s if timeout_s is not None else None
 
         for iter in range(nb_iter):
+            if _deadline is not None and time.perf_counter() > _deadline:
+                break
             # Bundle creation phase — all agents per paper Algorithm 1
             for i in range(self.na):
                 self.agents[i].create_bundle()
