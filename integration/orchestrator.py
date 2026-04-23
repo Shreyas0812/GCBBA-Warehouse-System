@@ -69,7 +69,9 @@ class IntegrationOrchestrator:
                  path_planner: str = "ca_star",          # "ca_star", "rhcr", or "pbs"
                  rhcr_replanning_period: int = None,    # h parameter; defaults to window_size (h=w)
                  allocation_timeout_s: Optional[float] = None,  # max seconds per allocation call; None = unlimited
-                 idle_return_home_after: int = 25,
+                 idle_charge_after: int = 15,
+                 no_path_replan_limit: int = 40,
+                 stuck_task_release_after: int = 120,
                  ) -> None:
 
         if allocation_method not in {"gcbba", "sga", "cbba", "dmchba"}:
@@ -89,7 +91,9 @@ class IntegrationOrchestrator:
         self.max_plan_time = max_plan_time
         self.Lt = Lt
         self.allocation_timeout_s = allocation_timeout_s
-        self.idle_return_home_after = idle_return_home_after
+        self.idle_charge_after = idle_charge_after
+        self.no_path_replan_limit = no_path_replan_limit
+        self.stuck_task_release_after = stuck_task_release_after
 
         self.grid_map = GridMap(config_path)
         _planners = {"ca_star": CooperativeAStar, "rhcr": RHCRCAStar, "pbs": PriorityBasedSearch}
@@ -100,7 +104,14 @@ class IntegrationOrchestrator:
         else:
             self.path_planner = _planners[path_planner](self.grid_map)
 
-        agent_positions, self.induct_positions, self.eject_positions, charging_positions, energy_config = self._load_config(config_path)
+        (
+            agent_positions,
+            self.induct_positions,
+            self.eject_positions,
+            charging_positions,
+            idle_task_positions,
+            energy_config,
+        ) = self._load_config(config_path)
         self.max_energy                  = energy_config['max_energy']
         self.charge_duration             = energy_config['charge_duration']
         self.charge_rate                 = energy_config['charge_rate']
@@ -119,6 +130,7 @@ class IntegrationOrchestrator:
 
         self._init_allocation(agent_positions)
         self._init_agent_states()
+        self._stuck_task_steps: Dict[int, int] = {a.agent_id: 0 for a in self.agent_states}
 
         # Simulation state variables
         self.current_timestep = 0
@@ -128,6 +140,7 @@ class IntegrationOrchestrator:
 
         self.latest_assignment: List[List[int]] = []  # Store latest GCBBA assignment for reference in stepping logic
         self._allocation_cancelled: bool = False  # Set by InstrumentedOrchestrator timeout to prevent zombie threads from mutating state
+        self._force_allocation_rerun: bool = False
 
         # Consensus round accumulators
         self._total_consensus_rounds_all_calls: int = 0
@@ -140,6 +153,26 @@ class IntegrationOrchestrator:
             self.grid_map.continuous_to_grid(float(pos[0]), float(pos[1]), float(pos[2]))
             for pos in charging_positions
         ]
+        self.idle_task_grid_positions = [
+            self.grid_map.continuous_to_grid(float(pos[0]), float(pos[1]), float(pos[2]))
+            for pos in idle_task_positions
+        ]
+        # Backward-compatible alias used by existing helper names.
+        self.wait_station_grid_positions = self.idle_task_grid_positions
+        self.station_grid_positions = {
+            self.grid_map.continuous_to_grid(float(pos[0]), float(pos[1]), float(pos[2]))
+            for pos in (self.induct_positions + self.eject_positions)
+        }
+        self.eject_grid_positions = {
+            self.grid_map.continuous_to_grid(float(pos[0]), float(pos[1]), float(pos[2]))
+            for pos in self.eject_positions
+        }
+        self.wait_forbidden_positions = set(self.station_grid_positions)
+        for ex, ey, ez in self.eject_grid_positions:
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx_pos, ny_pos = ex + dx, ey + dy
+                if self.grid_map.is_valid_cell(nx_pos, ny_pos, ez):
+                    self.wait_forbidden_positions.add((nx_pos, ny_pos, ez))
 
     def _validate_energy_config(self, agent_positions: List, charging_positions: List) -> None:
         """
@@ -177,7 +210,7 @@ class IntegrationOrchestrator:
                 f"Set max_energy >= {int(required) + 1} in the map YAML to fix this."
             )
 
-    def _load_config(self, config_path: str) -> Tuple[List, List, List, List, Dict]:
+    def _load_config(self, config_path: str) -> Tuple[List, List, List, List, List, Dict]:
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
 
@@ -199,6 +232,10 @@ class IntegrationOrchestrator:
         charging_positions = [(charging_pos_flat[i], charging_pos_flat[i+1], charging_pos_flat[i+2], charging_pos_flat[i+3])
                                 for i in range(0, len(charging_pos_flat), 4)]
 
+        wait_pos_flat = params.get('idle_task_stations', [])
+        wait_positions = [(wait_pos_flat[i], wait_pos_flat[i+1], wait_pos_flat[i+2], wait_pos_flat[i+3])
+                    for i in range(0, len(wait_pos_flat), 4)]
+
         energy_params = params.get('energy', {})
         energy_config = {
             'max_energy':                  int(energy_params.get('max_energy', 100)),
@@ -207,7 +244,7 @@ class IntegrationOrchestrator:
             'charging_trigger_multiplier': float(energy_params.get('charging_trigger_multiplier', 2.0)),
         }
 
-        return agent_positions, induct_positions, eject_positions, charging_positions, energy_config
+        return agent_positions, induct_positions, eject_positions, charging_positions, wait_positions, energy_config
 
     def _init_allocation(self, agent_positions: List) -> None:
         """
@@ -271,7 +308,8 @@ class IntegrationOrchestrator:
         for gcbba_agent in self.gcbba_orchestrator_initial.agents:
             grid_pos = self.grid_map.continuous_to_grid(float(gcbba_agent.pos[0]), float(gcbba_agent.pos[1]), float(gcbba_agent.pos[2]))
             self.agent_states.append(AgentState(agent_id=gcbba_agent.agent_id, initial_position=grid_pos, speed=gcbba_agent.speed,
-                                                 max_energy=self.max_energy, charge_rate=self.charge_rate))
+                                                 max_energy=self.max_energy, charge_rate=self.charge_rate,
+                                                 no_current_task_threshold=self.idle_charge_after))
 
     def _inject_new_tasks(self) -> List[int]:
         """
@@ -377,7 +415,7 @@ class IntegrationOrchestrator:
                    for a in self.agent_states):
                 self.run_allocation()
 
-        self._dispatch_idle_agents_home()
+        self._dispatch_idle_agents_to_charge()
 
         self._plan_paths()
 
@@ -693,28 +731,18 @@ class IntegrationOrchestrator:
                 dist_to_eject = self._bfs_dist(start, eject_pos)
                 charger_dist_from_eject, charger_pos_from_eject = self._get_nearest_charger_from_pos(eject_pos)
 
-                # If the agent cannot safely complete the eject leg and then reach a
-                # charger, abort the current task, navigate to charge immediately, and
-                # re-queue the task into _pending_task_ids so _detect_events() idle+pending
-                # trigger fires on the same timestep and reallocates it without delay.
+                # During to_eject, never drop the current task: payload is already picked.
+                # If energy is low, continue toward eject and let charging happen afterward.
                 if charger_pos_from_eject is not None:
                     energy_to_survive = dist_to_eject + charger_dist_from_eject
                     if agent_state.energy < int(energy_to_survive * 1.1):
-                        aborted_task_id = agent_state.current_task.task_id
                         tqdm.write(
                             f"[t={self.current_timestep}] Agent {agent_state.agent_id}: energy "
                             f"({agent_state.energy}) too low for eject ({dist_to_eject} steps) + "
                             f"charger ({charger_dist_from_eject} steps). "
-                            f"Aborting task {aborted_task_id}, redirecting to charger."
+                            f"Continuing to_eject without dropping task "
+                            f"{agent_state.current_task.task_id} (payload already picked)."
                         )
-                        for t in agent_state.planned_tasks:
-                            self._pending_task_ids.add(t.task_id)
-                        agent_state.start_charging(charger_pos_from_eject)
-                        # Re-queue the aborted task so allocation triggers correctly
-                        self._pending_task_ids.add(aborted_task_id)
-                        induct_idx = self._task_to_induct.get(aborted_task_id)
-                        if induct_idx is not None:
-                            self._induct_queue_depth[induct_idx] += 1
 
             planning_agents.append(agent_state)
 
@@ -725,6 +753,18 @@ class IntegrationOrchestrator:
         paths = self.path_planner.plan_all(planning_agents, self.current_timestep, self.max_plan_time)
         for agent_state in planning_agents:
             agent_state.assign_path(paths[agent_state.agent_id])
+
+            # If a task repeatedly fails to get a usable path, release and reassign it.
+            if (
+                agent_state.current_task is not None
+                and agent_state.current_path is None
+                and agent_state.needs_new_path
+                and agent_state.task_phase != "to_eject"
+                and agent_state.no_path_replans >= self.no_path_replan_limit
+            ):
+                abandoned_ids = agent_state.abandon_tasks_for_reallocation()
+                for tid in abandoned_ids:
+                    self._pending_task_ids.add(tid)
             
     def save_trajectories(self, path: str = "results/data/trajectories.csv") -> None:
         """Export all agent position histories to a CSV file."""
@@ -740,11 +780,49 @@ class IntegrationOrchestrator:
     def _detect_events(self, completed_task_ids: List[int]) -> OrchestratorEvents:
 
         stuck_agent_ids: List[int] = []
+        released_task_ids: List[int] = []
 
         for agent_state in self.agent_states:
-            if agent_state.detect_stuck(self.stuck_threshold):
+            is_stuck = agent_state.detect_stuck(self.stuck_threshold)
+            if is_stuck:
                 stuck_agent_ids.append(agent_state.agent_id)
-                agent_state.needs_new_path = True  # Trigger replanning for stuck agents
+                if agent_state.current_task is not None:
+                    self._stuck_task_steps[agent_state.agent_id] = self._stuck_task_steps.get(agent_state.agent_id, 0) + 1
+                    if (
+                        agent_state.task_phase != "to_eject"
+                        and self._stuck_task_steps[agent_state.agent_id] >= self.stuck_task_release_after
+                    ):
+                        released = agent_state.release_claimed_tasks()
+                        released_task_ids.extend(released)
+                        self._stuck_task_steps[agent_state.agent_id] = 0
+                    elif agent_state.task_phase == "to_eject":
+                        # Never drop a payload already picked up; keep replanning.
+                        agent_state.needs_new_path = True
+                else:
+                    agent_state.needs_new_path = True  # Trigger replanning for stuck agents
+                    self._stuck_task_steps[agent_state.agent_id] = 0
+            else:
+                self._stuck_task_steps[agent_state.agent_id] = 0
+
+        for tid in released_task_ids:
+            self._pending_task_ids.add(tid)
+
+        # Per-step orphan protection: keep all uncompleted/unclaimed tasks re-queueable.
+        claimed_ids = set()
+        for ast in self.agent_states:
+            if ast.current_task is not None:
+                claimed_ids.add(ast.current_task.task_id)
+            for t in ast.planned_tasks:
+                claimed_ids.add(t.task_id)
+        orphan_added = False
+        for tid in self.all_task_ids:
+            if tid in self.completed_task_ids:
+                continue
+            if tid in claimed_ids:
+                continue
+            if tid not in self._pending_task_ids:
+                self._pending_task_ids.add(tid)
+                orphan_added = True
 
         gcbba_rerun = False
         time_since_last_gcbba = self.current_timestep - self.last_gcbba_timestep
@@ -759,6 +837,13 @@ class IntegrationOrchestrator:
             if any(a.is_idle and not a.is_charging and not a.is_navigating_to_charger
                    for a in self.agent_states):
                 gcbba_rerun = True
+
+        if released_task_ids:
+            gcbba_rerun = True
+
+        if orphan_added or self._force_allocation_rerun:
+            gcbba_rerun = True
+            self._force_allocation_rerun = False
 
         # Rerun Interval: if nothing has triggered a rerun for rerun_interval timesteps, force one
         if not gcbba_rerun and time_since_last_gcbba >= self.rerun_interval:
@@ -814,27 +899,83 @@ class IntegrationOrchestrator:
         dist, pos = self._get_nearest_charger_from_pos(agent_pos)
         return (dist if dist is not None else 0), pos
 
-    def _dispatch_idle_agents_home(self) -> None:
+    def _get_nearest_wait_from_pos(
+        self,
+        grid_pos: Tuple[int, int, int],
+        excluded_wait_positions: Optional[Set[Tuple[int, int, int]]] = None,
+    ) -> Tuple[Optional[int], Optional[Tuple[int, int, int]]]:
+        """
+        Returns (bfs_distance, idle_task_grid_pos) for the nearest configured
+        idle-task station from an arbitrary grid position.
+        """
+        if not self.idle_task_grid_positions:
+            return None, None
+
+        excluded = excluded_wait_positions or set()
+
+        best_dist = float('inf')
+        best_pos = None
+        for wait_grid_pos in self.idle_task_grid_positions:
+            if wait_grid_pos in excluded:
+                continue
+            if wait_grid_pos in self.wait_forbidden_positions:
+                continue
+            dist_map = self.grid_map.bfs_distances_from_station.get(wait_grid_pos, {})
+            dist = dist_map.get(grid_pos, float('inf'))
+            if dist < best_dist:
+                best_dist = dist
+                best_pos = wait_grid_pos
+        if best_dist == float('inf'):
+            return None, None
+        return int(best_dist), best_pos
+
+    def _dispatch_idle_agents_to_charge(self) -> None:
         """
         If an agent has no current/planned tasks for several timesteps, send it
-        back to its initial position to avoid blocking high-value cells (e.g., ejects).
+        to a configured idle_task station (typically edge cells behind inducts)
+        so it stays out of critical traffic while remaining allocatable.
         """
-        if self.idle_return_home_after <= 0:
+        if self.idle_charge_after <= 0:
             return
 
+        reserved_wait_positions: Set[Tuple[int, int, int]] = set()
         for agent_state in self.agent_states:
-            if agent_state.is_charging or agent_state.is_navigating_to_charger:
+            if agent_state.is_navigating_to_wait and agent_state.wait_position is not None:
+                reserved_wait_positions.add(agent_state.wait_position)
+            pos = agent_state.get_position()
+            if pos in self.idle_task_grid_positions:
+                reserved_wait_positions.add(pos)
+
+        dynamic_forbidden_positions: Set[Tuple[int, int, int]] = set()
+        for agent_state in self.agent_states:
+            if agent_state.current_task is None:
+                continue
+            dynamic_forbidden_positions.add(agent_state.get_position())
+            goal = agent_state.get_current_goal()
+            if goal is not None:
+                dynamic_forbidden_positions.add(goal)
+
+        for agent_state in self.agent_states:
+            if agent_state.is_charging or agent_state.is_navigating_to_charger or agent_state.is_navigating_to_wait:
                 continue
             if agent_state.current_task is not None or len(agent_state.planned_tasks) > 0:
                 continue
-            if agent_state.is_returning_home:
+            if not agent_state.no_current_task:
                 continue
-            if agent_state.get_position() == agent_state.initial_position:
-                continue
-            if agent_state.idle_without_tasks_steps < self.idle_return_home_after:
+            if agent_state.get_position() in self.idle_task_grid_positions:
                 continue
 
-            agent_state.start_returning_home()
+            _, wait_pos = self._get_nearest_wait_from_pos(
+                agent_state.get_position(),
+                excluded_wait_positions=reserved_wait_positions | dynamic_forbidden_positions,
+            )
+            if wait_pos is None:
+                continue
+            if agent_state.get_position() == wait_pos:
+                continue
+
+            agent_state.start_waiting(wait_pos)
+            reserved_wait_positions.add(wait_pos)
 
     def _check_and_start_charging(self) -> List[int]:
         """
@@ -847,7 +988,7 @@ class IntegrationOrchestrator:
 
         for agent_state in self.agent_states:
             # Only skip agents already handling their charging — idle agents are checked too
-            if agent_state.is_charging or agent_state.is_navigating_to_charger:
+            if agent_state.is_charging or agent_state.is_navigating_to_charger or agent_state.is_navigating_to_wait:
                 continue
 
             # Never interrupt an agent mid-eject — the induct-station energy check

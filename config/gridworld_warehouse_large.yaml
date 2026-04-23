@@ -222,6 +222,22 @@ create_gridworld_node:
       54, 51, 0, 12     # Charging Station 12
     ]
 
+    # Idle-task stations for idle fallback (non-charging parking)
+    idle_task_stations: [
+      54, 7, 0, 1,
+      54, 11, 0, 2,
+      54, 15, 0, 3,
+      54, 19, 0, 4,
+      54, 23, 0, 5,
+      54, 27, 0, 6,
+      54, 31, 0, 7,
+      54, 35, 0, 8,
+      54, 39, 0, 9,
+      54, 43, 0, 10,
+      54, 47, 0, 11,
+      54, 51, 0, 12
+    ]
+
     # Visualization settings
     visualization:
       # Node visualization

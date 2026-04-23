@@ -38,7 +38,7 @@ class AgentState:
      - Provides methods to update execution state and retrieve current task info
     """
 
-    def __init__(self, agent_id: int, initial_position: Tuple[int, int, int], speed: float = 1.0, max_energy: int = 100, charge_rate: int = 1):
+    def __init__(self, agent_id: int, initial_position: Tuple[int, int, int], speed: float = 1.0, max_energy: int = 100, charge_rate: int = 1, no_current_task_threshold: int = 15):
         self.agent_id = agent_id
         self.pos = np.array(initial_position, dtype=np.int32)
         self.initial_position: Tuple[int, int, int] = tuple(int(v) for v in initial_position)
@@ -71,11 +71,16 @@ class AgentState:
         self.is_charging: bool = False
         self.charge_remaining: int = 0 # timesteps remaining to finish charging when at a charging station
         self.charging_station_pos: Optional[Tuple[int, int, int]] = None # For now the position of the nearest induct station, can be updated to track actual charging stations if different
+        self.is_navigating_to_wait: bool = False
+        self.wait_position: Optional[Tuple[int, int, int]] = None
+        self.is_idle_task: bool = False
 
         self.current_timestep: int = 0
         self.wait_counter: int = 0  # total timesteps spent blocked (used for deadlock-break priority)
-        self.idle_without_tasks_steps: int = 0
-        self.is_returning_home: bool = False
+        self.no_path_replans: int = 0  # consecutive replans that failed to provide a usable path
+        self.no_current_task_steps: int = 0
+        self.no_current_task: bool = False
+        self.no_current_task_threshold: int = no_current_task_threshold
 
     def update_from_gcbba(self, assigned_tasks: List[Dict], current_timestep: int):
         """
@@ -86,9 +91,15 @@ class AgentState:
         self.current_timestep = current_timestep
 
         if assigned_tasks:
-            # Allocation has real work for this agent; stop any idle repositioning.
-            self.is_returning_home = False
-            self.idle_without_tasks_steps = 0
+            self.no_current_task_steps = 0
+            self.no_current_task = False
+            # Cancel idle-task parking when real work arrives.
+            self.is_navigating_to_wait = False
+            self.wait_position = None
+            self.is_idle_task = False
+            self.current_path = None
+            self.current_path_index = 0
+            self.needs_new_path = False
 
         executing_task_id = self.current_task.task_id if self.current_task else None
 
@@ -130,25 +141,25 @@ class AgentState:
             # so the orchestrator retries path planning next timestep instead of
             # immediately "arriving" at the current position and charging in the wrong place.
             if not path or (len(path) == 1 and tuple(path[0]) == self.get_position()):
+                self.no_path_replans += 1
                 return
             self.current_path = path
             self.current_path_index = 0
             self.needs_new_path = False
+            self.no_path_replans = 0
             return
 
-        # Idle repositioning path (no task attached)
-        if self.is_returning_home and self.current_task is None and len(self.planned_tasks) == 0:
+        # Idle wait-state navigation has no task — assign path directly
+        if self.is_navigating_to_wait:
             if len(path) > 1 and tuple(path[0]) == self.get_position():
                 path = path[1:]
             if not path or (len(path) == 1 and tuple(path[0]) == self.get_position()):
-                self.current_path = None
-                self.current_path_index = 0
-                self.needs_new_path = False
-                self.is_returning_home = (self.get_position() != self.initial_position)
+                self.no_path_replans += 1
                 return
             self.current_path = path
             self.current_path_index = 0
             self.needs_new_path = False
+            self.no_path_replans = 0
             return
 
         if self.current_task is None and len(self.planned_tasks) > 0:
@@ -169,6 +180,7 @@ class AgentState:
                 self.current_path = None
                 self.current_path_index = 0
                 self.needs_new_path = True
+                self.no_path_replans += 1
                 return
 
             # Update the current task with the new path and reset path index
@@ -179,6 +191,7 @@ class AgentState:
             self.current_path = path
             self.current_path_index = 0
             self.needs_new_path = False
+            self.no_path_replans = 0
 
     def step(self, timestep: int) -> bool:
         """
@@ -198,11 +211,13 @@ class AgentState:
             and len(self.planned_tasks) == 0
             and not self.is_charging
             and not self.is_navigating_to_charger
-            and not self.is_returning_home
+            and not self.is_navigating_to_wait
         ):
-            self.idle_without_tasks_steps += 1
+            self.no_current_task_steps += 1
+            self.no_current_task = self.no_current_task_steps >= self.no_current_task_threshold
         else:
-            self.idle_without_tasks_steps = 0
+            self.no_current_task_steps = 0
+            self.no_current_task = False
 
         # Move to Charging
         if self.is_navigating_to_charger:
@@ -239,6 +254,46 @@ class AgentState:
                 self.current_path_index = 0    # correctly detects that a new path is needed
                 self.needs_new_path = False
             return False # No task completion during charging
+
+        # Move to Wait State
+        if self.is_navigating_to_wait:
+            if self.current_path is None:
+                self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
+                return False
+            if self.current_path_index < len(self.current_path):
+                next_pos = self.current_path[self.current_path_index]
+                actually_moved = tuple(next_pos) != tuple(self.pos)
+                self.pos = np.array(next_pos, dtype=np.int32)
+                self.current_path_index += 1
+                if actually_moved:
+                    self.deplete_energy()
+                    self.wait_counter = 0
+                self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
+
+                if self.current_path_index >= len(self.current_path):
+                    self.is_navigating_to_wait = False
+                    self.wait_position = None
+                    self.is_idle_task = True
+                    self.is_idle = True
+                    self.needs_new_path = False
+
+            return False
+
+        # If we are already standing on the current phase goal, progress the task
+        # even when no explicit movement path exists.
+        if self.current_task is not None:
+            goal = self.get_current_goal()
+            if goal is not None and tuple(self.pos) == goal:
+                if self.task_phase == "to_induct":
+                    self.task_phase = "to_eject"
+                    self.current_path = None
+                    self.current_path_index = 0
+                    self.needs_new_path = True
+                    self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
+                    return False
+                if self.task_phase == "to_eject":
+                    self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
+                    return self._complete_current_task(timestep)
 
         if self.current_path is None or len(self.current_path) == 0:
             self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
@@ -278,14 +333,6 @@ class AgentState:
                     # Arrived at eject station, task is complete
                     return self._complete_current_task(timestep)
 
-                # Idle repositioning completed
-                if self.is_returning_home and self.current_task is None:
-                    self.current_path = None
-                    self.current_path_index = 0
-                    self.needs_new_path = False
-                    self.is_returning_home = False
-                    return False
-        
         return False
 
     def _complete_current_task(self, timestep: int) -> bool:
@@ -305,6 +352,7 @@ class AgentState:
             self.current_path_index = 0
             self.task_phase = "to_induct"
             self.needs_new_path = False
+            self.no_path_replans = 0
 
             # Check if there are more planned tasks to execute
             if len(self.planned_tasks) > 0:
@@ -348,16 +396,16 @@ class AgentState:
         if self.is_navigating_to_charger and self.charging_station_pos is not None:
             return self.charging_station_pos
 
+        if self.is_navigating_to_wait and self.wait_position is not None:
+            return self.wait_position
+
         if self.current_task is not None:
             if self.task_phase == "to_induct":
                 return self.current_task.induct_pos
             elif self.task_phase == "to_eject":
                 return self.current_task.eject_pos
 
-        if self.is_returning_home:
-            return self.initial_position
-
-        elif len(self.planned_tasks) > 0:
+        if len(self.planned_tasks) > 0:
             return self.planned_tasks[0].induct_pos
         
         else:
@@ -409,7 +457,9 @@ class AgentState:
             'agent_id': self.agent_id,
             'position': (int(self.pos[0]), int(self.pos[1]), int(self.pos[2])),
             'is_idle': self.is_idle,
+            'is_idle_task': self.is_idle_task,
             'is_stuck': self.is_stuck,
+            'no_current_task': self.no_current_task,
             'task_phase': self.task_phase,
             'needs_new_path': self.needs_new_path,
             'current_task': self.current_task.task_id if self.current_task else None,
@@ -448,6 +498,9 @@ class AgentState:
         self.is_charging = False
         self.charge_remaining = charge_duration
         self.charging_station_pos = charging_station_pos
+        self.is_navigating_to_wait = False
+        self.wait_position = None
+        self.is_idle_task = False
 
         # Drop all planned tasks
         self.planned_tasks = []
@@ -457,15 +510,49 @@ class AgentState:
         self.task_phase = "to_induct"
         self.is_idle = False
         self.needs_new_path = True # Need new path to navigate to charger
-        self.is_returning_home = False
-        self.idle_without_tasks_steps = 0
+        self.no_path_replans = 0
+        self.no_current_task = False
+        self.no_current_task_steps = 0
 
-    def start_returning_home(self) -> None:
-        """Begin idle repositioning to the initial spawn location."""
-        self.is_returning_home = True
-        self.needs_new_path = True
+    def start_waiting(self, wait_position: Tuple[int, int, int]) -> None:
+        """Initiate idle_task navigation to a non-charging parking position."""
+        self.is_navigating_to_wait = True
+        self.wait_position = wait_position
+        self.is_idle_task = True
         self.current_path = None
         self.current_path_index = 0
+        self.is_idle = False
+        self.needs_new_path = True
+        self.no_path_replans = 0
+        self.no_current_task = False
+        self.no_current_task_steps = 0
+
+    def release_claimed_tasks(self) -> List[int]:
+        """Release current and planned tasks so orchestrator can reassign them."""
+        released: List[int] = []
+        if self.current_task is not None:
+            released.append(self.current_task.task_id)
+        released.extend(t.task_id for t in self.planned_tasks)
+
+        self.current_task = None
+        self.planned_tasks = []
+        self.current_path = None
+        self.current_path_index = 0
+        self.task_phase = "to_induct"
+        self.is_idle = True
+        self.needs_new_path = False
+        self.no_path_replans = 0
+        self.is_navigating_to_wait = False
+        self.wait_position = None
+        self.is_idle_task = False
+        self.no_current_task = False
+        self.no_current_task_steps = 0
+
+        return released
+
+    def abandon_tasks_for_reallocation(self) -> List[int]:
+        """Backward-compatible alias for release_claimed_tasks()."""
+        return self.release_claimed_tasks()
 
     def step_charging(self, charge_per_timestep: int = 1) -> bool:
         """
