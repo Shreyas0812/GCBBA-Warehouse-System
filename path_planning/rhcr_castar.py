@@ -67,6 +67,32 @@ class RHCRCAStar(PathPlanner):
             result[agent_state.agent_id] = path[:self.replanning_period]  # execute only h steps
         return result
 
+    def _plan_idle_paths(self, agent_states: list, current_timestep: int, _max_plan_time: int) -> dict:
+        """Plan paths for agents navigating to idle-task stations, capped to window_size steps.
+
+        Wait agents plan after chargers but before task agents, giving them
+        priority to clear out of eject zones quickly. _max_plan_time is ignored —
+        RHCR always uses window_size.
+        """
+        result   = {}
+        max_time = current_timestep + self.window_size
+        for agent_state in agent_states:
+            self._ca.clear_agent_reservations(agent_state.agent_id)
+            start = agent_state.get_position()
+            goal  = agent_state.get_current_goal()
+            path  = self._ca.plan_path_with_reservations(
+                start=start, goal=goal, agent_id=agent_state.agent_id,
+                max_time=max_time, start_time=current_timestep,
+                require_goal=False,
+            )
+            if path is None:
+                tqdm.write(f"[t={current_timestep}] Agent {agent_state.agent_id}: "
+                           f"RHCR found no wait path within window={self.window_size} — staying in place")
+                path = [start]
+            self._ca.reserve_path(path, agent_state.agent_id, start_time=current_timestep)
+            result[agent_state.agent_id] = path[:self.replanning_period]  # execute only h steps
+        return result
+
     def _plan_task_paths(self, agent_states: list, current_timestep: int, _max_plan_time: int) -> dict:
         """Plan paths for task agents, capped to window_size steps.
 

@@ -230,8 +230,20 @@ class PriorityBasedSearch(PathPlanner):
                              max_plan_time: int) -> dict:
         """Plan paths for agents navigating to a charger using PBS.
 
-        Charger agents plan first so task agents route around them.
+        Charger agents plan first so wait and task agents route around them.
         max_time is bounded by max_plan_time (not windowed like RHCR).
+        """
+        if not agent_states:
+            return {}
+        max_time = current_timestep + max_plan_time
+        return self._pbs_plan(agent_states, current_timestep, max_time)
+
+    def _plan_idle_paths(self, agent_states: list, current_timestep: int,
+                         max_plan_time: int) -> dict:
+        """Plan paths for agents navigating to idle-task stations using PBS.
+
+        Wait agents plan after chargers but before task agents, so they
+        route around charger paths but task agents route around wait paths.
         """
         if not agent_states:
             return {}

@@ -15,21 +15,25 @@ class PathPlanner(ABC):
         current_timestep: int,
         max_plan_time: int,
     ) -> dict:
-        """Concrete two-phase entry point. Do not override in subclasses.
+        """Concrete three-phase entry point. Do not override in subclasses.
 
         agent_states are pre-filtered by the orchestrator (needs_new_path=True,
-        goal is not None). is_navigating_to_charger is set by AgentState.
+        goal is not None). is_navigating_to_charger and is_navigating_to_wait
+        are set by AgentState.
 
         Phase 1: charger agents plan first and reserve their paths.
-        Phase 2: task agents plan around the reserved charger paths.
+        Phase 2: wait-station agents plan and reserve their paths.
+        Phase 3: task agents plan around the reserved charger and wait paths.
 
         Returns:
             dict mapping agent_id -> path (list of (x,y,z) tuples).
         """
         charger_agents = [a for a in agent_states if a.is_navigating_to_charger]
-        task_agents    = [a for a in agent_states if not a.is_navigating_to_charger]
+        wait_agents    = [a for a in agent_states if a.is_navigating_to_wait]
+        task_agents    = [a for a in agent_states if not a.is_navigating_to_charger and not a.is_navigating_to_wait]
 
         paths = self._plan_charger_paths(charger_agents, current_timestep, max_plan_time)
+        paths.update(self._plan_idle_paths(wait_agents, current_timestep, max_plan_time))
         paths.update(self._plan_task_paths(task_agents, current_timestep, max_plan_time))
         return paths
 
@@ -43,7 +47,26 @@ class PathPlanner(ABC):
         """Plan paths for agents navigating to a charger.
 
         Must reserve paths internally before returning so that
-        _plan_task_paths() routes around them.
+        _plan_idle_paths() and _plan_task_paths() route around them.
+
+        Returns:
+            dict mapping agent_id -> path (list of (x,y,z) tuples).
+            If no path is found, maps to [agent_start_pos].
+        """
+        pass
+
+    @abstractmethod
+    def _plan_idle_paths(
+        self,
+        agent_states: list,
+        current_timestep: int,
+        max_plan_time: int,
+    ) -> dict:
+        """Plan paths for agents navigating to idle-task (wait) stations.
+
+        Called after charger paths are reserved. Must reserve paths internally
+        so task agents route around them. These agents have high priority to
+        avoid blocking critical paths while waiting for task assignments.
 
         Returns:
             dict mapping agent_id -> path (list of (x,y,z) tuples).

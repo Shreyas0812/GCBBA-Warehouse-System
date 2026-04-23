@@ -266,6 +266,41 @@ class CooperativeAStar(PathPlanner):
 
         return result
 
+    def _plan_idle_paths(self, agent_states: list, current_timestep: int, max_plan_time: int) -> dict:
+        """Sequential CA* for agents navigating to idle-task (wait) stations.
+
+        Wait agents plan after chargers but before task agents, so they
+        route around charger paths but task agents route around wait paths.
+        Falls back to [start] if no path is found.
+        """
+        result = {}
+        max_time = current_timestep + max_plan_time
+
+        for agent_state in agent_states:
+            self.clear_agent_reservations(agent_state.agent_id)
+            start = agent_state.get_position()
+            goal  = agent_state.get_current_goal()
+
+            path = self.plan_path_with_reservations(
+                start=start,
+                goal=goal,
+                agent_id=agent_state.agent_id,
+                max_time=max_time,
+                start_time=current_timestep,
+            )
+
+            if path is None:
+                tqdm.write(
+                    f"[t={current_timestep}] Agent {agent_state.agent_id}: "
+                    f"CA* found no wait path to {goal} within {max_plan_time} steps — staying in place"
+                )
+                path = [start]
+
+            self.reserve_path(path, agent_state.agent_id, start_time=current_timestep)
+            result[agent_state.agent_id] = path
+
+        return result
+
     def _plan_task_paths(self, agent_states: list, current_timestep: int, max_plan_time: int) -> dict:
         """Sequential CA* for agents completing warehouse tasks.
 
