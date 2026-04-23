@@ -10,6 +10,7 @@ See run_single_ri_sensitivity_experiment.py for the rerun_interval sensitivity r
 import os
 import sys
 import time
+import random
 from collections import OrderedDict
 
 import numpy as np
@@ -306,6 +307,7 @@ def run_single_steady_state_experiment(
     output_dir: Optional[str] = None,
 ) -> RunMetrics:
     np.random.seed(seed)
+    random.seed(seed)
 
     orch = MetricsOrchestrator(
         config_path=config_path,
@@ -373,6 +375,7 @@ def run_single_batch_experiment(
     output_dir: Optional[str] = None,
 ) -> RunMetrics:
     np.random.seed(seed)
+    random.seed(seed)
 
     orch = MetricsOrchestrator(
         config_path=config_path,
