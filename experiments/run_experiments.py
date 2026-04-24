@@ -84,10 +84,6 @@ def get_experiment_configs(
     # Steady-state capacity: max arrival rate that keeps the system stable (tasks arrive at same rate they can be completed).
     _ss_capacity = num_agents / (avg_service_time * num_induct)
 
-    # Batch capacity: max tasks all agents could complete before BATCH_MAX_TIMESTEPS.
-    # Used as the anchor for the batch task count sweep (unlike steady-state which uses arrival capacity).
-    _batch_capacity = round(num_agents * BATCH_MAX_TIMESTEPS / avg_service_time)
-
     if mode == "quick":
         seeds = [42]
         # One sparse range (35% diagonal) and one full-connectivity range
@@ -95,7 +91,8 @@ def get_experiment_configs(
         # Knee (1×) and a heavy-load point (2×) only
         ss_capacity_fracs = [1.0, 2.0]
 
-        batch_fracs = [0.2, 0.5]  # 20% of batch capacity and full batch capacity
+        # Fixed workload in tasks per induct station for map-invariant comparison.
+        batch_tasks_per_induct = [10, 20]
 
     else:  # full
         seeds = [42, 123]
@@ -104,7 +101,8 @@ def get_experiment_configs(
         # 8 points from 50% to 225% of ss capacity
         ss_capacity_fracs = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25]
         
-        batch_fracs = [0.2, 0.4, 0.7, 1.0]
+        # Fixed workload in tasks per induct station for map-invariant comparison.
+        batch_tasks_per_induct = [10, 20, 30, 40]
 
     comm_ranges = sorted(set(
         max(3, round(f * diagonal)) for f in range_fracs
@@ -115,7 +113,7 @@ def get_experiment_configs(
     ))
 
     batch_task_counts = sorted(set(
-        max(num_agents, round(f * _batch_capacity)) for f in batch_fracs
+        max(num_agents, num_induct * tpi) for tpi in batch_tasks_per_induct
     ))
 
     METHODS = methods if methods else ["gcbba", "cbba", "sga", "dmchba"]
