@@ -98,8 +98,8 @@ def get_experiment_configs(
         seeds = [42, 123]
         # 5 points spanning near-disconnected to full-connectivity
         range_fracs = [0.1, 0.2, 0.35, 0.6, 1.2]
-        # 8 points from 50% to 225% of ss capacity
-        ss_capacity_fracs = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25]
+        # 5 points from 50% to 150% of ss capacity
+        ss_capacity_fracs = [0.5, 0.75, 1.0, 1.25, 1.5]
         
         # Fixed workload in tasks per induct station for map-invariant comparison.
         batch_tasks_per_induct = [10, 20, 30, 40]
