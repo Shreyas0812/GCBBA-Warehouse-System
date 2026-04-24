@@ -307,6 +307,7 @@ def run_single_steady_state_experiment(
     charger_planner: Optional[str] = None,
     idle_planner: Optional[str] = None,
     task_planner: Optional[str] = None,
+    output_dir: Optional[str] = None,
 ) -> RunMetrics:
     np.random.seed(seed)
     random.seed(seed)
