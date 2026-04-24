@@ -984,10 +984,6 @@ class IntegrationOrchestrator:
         if self.idle_wait_after <= 0:
             return
 
-        # Don't park agents if tasks are pending allocation
-        if self._pending_task_ids:
-            return
-
         reserved_wait_positions: Set[Tuple[int, int, int]] = set()
         for agent_state in self.agent_states:
             if agent_state.is_navigating_to_wait and agent_state.wait_position is not None:
