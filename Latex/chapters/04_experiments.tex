@@ -259,6 +259,94 @@ total run counts per mode (quick/medium/full).}
 
 
 % ── 4.7 ─────────────────────────────────────────────────────────
+\section{Batch Summary Views}
+\label{sec:exp_compact_views}
+
+The slice plots above are useful for detailed inspection, but they
+create a large number of figures when both communication range and
+task load are swept. For the thesis, the same batch results are also
+summarized with heatmaps that place communication range on the
+x-axis and initial task count on the y-axis. Each heatmap panel shows
+one algorithm, so the four panels together provide a complete view of
+how performance changes across the full grid of batch configurations
+without repeating one figure per slice.
+
+Figure~\ref{fig:compact_views_summary} condenses the same batch data into
+four high-level views. Completion rate shows the main robustness pattern:
+DMCHBA remains robust across larger task loads, GCBBA is intermediate,
+and CBBA/SGA degrade sharply as load increases. Timeout rate highlights
+that CBBA and SGA are the most timeout-prone methods, while DMCHBA is the
+most stable in wall-clock terms. Makespan shows that low completion time
+is not sufficient on its own if the method fails to complete higher-load
+cases. Wall time makes the computational cost tradeoff explicit:
+DMCHBA is consistently faster than the other methods, while CBBA and SGA
+become expensive under heavy load.
+
+The plotting script also generates two supplementary summary plots: a
+critical-load curve and a completion-vs-runtime tradeoff scatter. These
+are useful appendix-level views and can be inserted later if a shorter
+results narrative is needed.
+
+\begin{figure}[htbp]
+  \centering
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/gridworld_warehouse_small/20260424_020252/compact_heatmap_completion_rate.png}
+    \par\smallskip\textbf{Completion rate}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/gridworld_warehouse_small/20260424_020252/compact_heatmap_timeout_rate.png}
+    \par\smallskip\textbf{Timeout rate}
+  \end{minipage}
+
+  \vspace{0.8em}
+
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/gridworld_warehouse_small/20260424_020252/compact_heatmap_makespan_completed.png}
+    \par\smallskip\textbf{Makespan (completed runs only)}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/gridworld_warehouse_small/20260424_020252/compact_heatmap_wall_time_seconds.png}
+    \par\smallskip\textbf{Wall time}
+  \end{minipage}
+
+  \caption{Heatmap summary of the batch sweep results.
+           The four panels show completion rate, timeout rate,
+           makespan for completed runs only, and wall-clock time,
+           each indexed by communication range (columns) and initial
+           task count (rows).}
+  \label{fig:compact_views_summary}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/gridworld_warehouse_small/20260424_020252/compact_capacity_curve.png}
+    \par\smallskip\textbf{Critical-load curve}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/gridworld_warehouse_small/20260424_020252/compact_tradeoff.png}
+    \par\smallskip\textbf{Completion/runtime tradeoff}
+  \end{minipage}
+
+  \caption{Supplementary summary views. The left panel shows the
+           maximum task count that still achieves at least 95\%
+           completion as communication range varies. The right panel
+           shows the tradeoff between completion rate and wall-clock
+           runtime across the batch sweep.}
+  \label{fig:compact_views_supplementary}
+\end{figure}
+
+
+% ── 4.7 ─────────────────────────────────────────────────────────
 \section{Agent Utilisation and Load Balance}
 \label{sec:exp_utilisation}
 
