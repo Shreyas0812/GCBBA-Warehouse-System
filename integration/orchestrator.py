@@ -69,7 +69,7 @@ class IntegrationOrchestrator:
                  path_planner: str = "ca_star",          # "ca_star", "rhcr", or "pbs"
                  rhcr_replanning_period: int = None,    # h parameter; defaults to window_size (h=w)
                  allocation_timeout_s: Optional[float] = None,  # max seconds per allocation call; None = unlimited
-                 idle_charge_after: int = 30,
+                 idle_wait_after: int = 30,
                  no_path_replan_limit: int = 40,
                  stuck_task_release_after: int = 120,
                  charger_planner: Optional[str] = None,  # "ca_star", "rhcr", or "pbs" for charger paths; None=use path_planner
@@ -94,7 +94,7 @@ class IntegrationOrchestrator:
         self.max_plan_time = max_plan_time
         self.Lt = Lt
         self.allocation_timeout_s = allocation_timeout_s
-        self.idle_charge_after = idle_charge_after
+        self.idle_wait_after = idle_wait_after
         self.no_path_replan_limit = no_path_replan_limit
         self.stuck_task_release_after = stuck_task_release_after
 
@@ -346,7 +346,7 @@ class IntegrationOrchestrator:
             grid_pos = self.grid_map.continuous_to_grid(float(gcbba_agent.pos[0]), float(gcbba_agent.pos[1]), float(gcbba_agent.pos[2]))
             self.agent_states.append(AgentState(agent_id=gcbba_agent.agent_id, initial_position=grid_pos, speed=gcbba_agent.speed,
                                                  max_energy=self.max_energy, charge_rate=self.charge_rate,
-                                                 no_current_task_threshold=self.idle_charge_after))
+                                                 no_current_task_threshold=self.idle_wait_after))
 
     def _inject_new_tasks(self) -> List[int]:
         """
@@ -981,7 +981,7 @@ class IntegrationOrchestrator:
         to a configured idle_task station (typically edge cells behind inducts)
         so it stays out of critical traffic while remaining allocatable.
         """
-        if self.idle_charge_after <= 0:
+        if self.idle_wait_after <= 0:
             return
 
         reserved_wait_positions: Set[Tuple[int, int, int]] = set()
