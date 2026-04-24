@@ -58,6 +58,23 @@ tasks that arrive while components are disconnected.
 The result is a performance cliff: as the communication range drops below
 the warehouse diameter, allocation quality degrades sharply or fails entirely.
 
+Beyond connectivity, real warehouse deployments impose a second class of
+constraints that academic benchmarks routinely abstract away:
+\emph{operational constraints} arising from physical robot limitations.
+Drive units carry finite batteries; a robot that exhausts its charge
+mid-aisle becomes a stationary obstacle requiring manual retrieval.
+Idle robots parked in main picking aisles force every active robot to
+route around them, degrading throughput even when the fleet is not at
+capacity.
+These constraints interact with allocation in non-trivial ways: a task that
+appears attractive to a low-energy agent may be unreachable before the
+agent must divert to a charger; an idle agent holding position in a busy
+corridor may block the paths of several active agents simultaneously.
+A coordination system evaluated only on path quality and task completion
+rate --- without modelling energy or congestion from idle robots --- will
+miss these failure modes entirely and may perform poorly when deployed
+on real hardware.
+
 This thesis develops the \textbf{Local Consensus-Based Bundle Algorithm
 (LCBA)}, which removes the connectivity assumption from GCBBA while preserving
 its convergence guarantees within each connected component and extending
@@ -191,6 +208,19 @@ This thesis makes the following contributions:
         This scale of evaluation provides statistical confidence in the results
         and reveals the interaction effects between communication conditions
         and planning strategy.
+
+  \item \textbf{Operationally realistic simulation with charging, wait stations,
+        and role-separated planners.}
+        The simulation incorporates finite agent energy with proactive charging
+        (agents navigate to charging stations before running out of power, with an
+        energy-budget filter that prevents bids on unaffordable tasks),
+        designated wait stations where idle agents park to avoid obstructing active
+        corridors, and independently configurable path planners for task-executing,
+        charging, and idle-parking agent roles.
+        Together these features bridge the gap between typical academic MAPF benchmarks
+        and the operational constraints of real warehouse deployments, ensuring that
+        LCBA is evaluated under realistic pressure and that its design choices are
+        exercised by the conditions they were designed to handle.
 \end{enumerate}
 
 

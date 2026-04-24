@@ -192,13 +192,72 @@ claimed by an agent; tasks that arrive when the queue is full are dropped and
 counted as a capacity violation metric.
 
 \textbf{Energy model.}
-Each agent starts with full energy and consumes one unit per timestep of movement.
-When the estimated remaining distance to the nearest charger falls below a
-threshold proportional to the agent's current energy, the agent suspends task
-execution, travels to the nearest available charging station, charges until
-full, and then resumes.
-Charging events trigger a reallocation (Section~\ref{sec:method_triggers})
-because the agent's effective availability changes.
+Each agent starts with full energy $E_{\max}$ and expends one unit per timestep of movement; stationary agents do not consume energy.
+The charging trigger condition checks, at every timestep:
+\begin{equation}
+  \alpha \cdot d_{\text{charger}}(x_i(t)) > e_i(t),
+  \label{eq:charge_trigger}
+\end{equation}
+where $e_i(t)$ is the agent's current energy level,
+$d_{\text{charger}}(x_i(t))$ is the BFS shortest-path distance to the
+nearest available charging station, and $\alpha \geq 1$ is the
+\emph{charging trigger multiplier}.
+Setting $\alpha > 1$ introduces a conservative safety margin: the agent
+departs for a charger while it still holds more energy than strictly
+required for the trip, preventing the degenerate case where an agent runs
+out of power en route to the charger and stalls in the middle of the floor.
+
+When the trigger fires, the agent immediately suspends its current task
+(which reverts to \textsc{Planned} state and becomes eligible for reassignment),
+navigates to the nearest available charging station at highest path-planning
+priority, and charges at a configurable rate $\rho_c$ units per timestep
+until $e_i = E_{\max}$.
+Charging stations are \emph{exclusive}: at most one agent occupies each
+station at a time, so the orchestrator assigns agents to distinct stations
+and routes subsequent chargers to the next-nearest free station.
+Once fully charged, the agent re-enters the allocation pool and a
+reallocation event is triggered automatically
+(Section~\ref{sec:method_triggers}).
+
+Crucially, energy levels are also incorporated into the bid computation:
+before an agent adds a task to its bundle, it checks whether the estimated
+travel distance to complete that task exceeds its remaining energy budget.
+If so, the task is filtered out of the candidate set.
+This \emph{energy-budget filter} prevents agents from winning bids on tasks
+they cannot physically complete before needing to recharge, which would
+otherwise cause a mid-execution hand-off and wasted travel.
+
+The energy configuration is validated at initialisation: if any reachable
+grid position is so far from all chargers that $\alpha \cdot d > E_{\max}$,
+an error is raised at startup, guaranteeing that a correctly configured
+system can always reach a charger from any occupied cell.
+
+\textbf{Wait stations.}
+Idle agents --- those with no current task assignment and not en route to a
+charger --- are a source of avoidable congestion: a robot parked in the
+middle of a picking aisle forces every active agent to route around it,
+adding detours and inflating travel times under high load.
+To mitigate this, the system designates a set of \emph{wait stations}
+$\mathcal{S}^{\text{wait}}$, configured in the map YAML as
+\texttt{idle\_task\_stations}.
+Wait stations are placed at low-traffic positions at the periphery of the
+grid (typically behind induct stations or at corridor dead-ends) where
+parked agents do not interrupt active delivery flows.
+
+When an agent becomes idle and no task is immediately available, the
+orchestrator routes it to its nearest unoccupied wait station using the
+idle-role path planner.
+Wait stations are \emph{exclusively reserved}: the orchestrator maintains a
+dynamic reservation set and prevents two agents from targeting the same
+station simultaneously; if all stations are occupied, the agent waits in
+place.
+When a new task is subsequently allocated to the waiting agent, it
+immediately preempts its parking navigation and replans toward the task's
+induct station, incurring no additional latency.
+
+This behaviour mirrors industrial deployments such as Amazon Robotics and
+Ocado, where idle drive units park at designated staging areas to keep main
+picking aisles clear for active robots.
 
 \textbf{Distance computation.}
 All travel-time estimates used in the GCBBA bid computation
@@ -434,6 +493,28 @@ pipeline.
 All three share a common interface and the same underlying space-time reservation
 table, enabling fair comparisons that isolate the effect of the planning
 strategy from all other system components.
+
+A key operational feature of the pipeline is that path planners are
+assigned \emph{per agent role} rather than uniformly across the fleet.
+Three independent planner slots are exposed:
+a \emph{task planner} for agents executing pickup-and-delivery assignments,
+a \emph{charger planner} for agents navigating to a charging station, and
+an \emph{idle planner} for agents navigating to a wait station.
+Each slot can be configured independently to any of the three strategies
+(CA*, PBS, or RHCR).
+This reflects a practical insight from real warehouse deployments: the
+three roles have different routing priorities and computational budgets.
+Agents heading to a charger have urgent energy constraints and benefit from
+the lowest-latency planner (CA*); PBS backtracking overhead is unwarranted
+when a robot is nearly out of power.
+Agents navigating to a wait station have no throughput urgency and can use
+any lightweight planner.
+Task agents are the throughput-critical path and should use the most capable
+strategy the deployment can afford.
+Exposing three independent slots allows practitioners to tune this
+trade-off without modifying the core algorithm, and it enables the
+experiments in Section~\ref{sec:exp_planners} to vary the task planner in
+isolation while holding charger and idle routing fixed.
 
 
 %% ── 3.5.1 ──────────────────────────────────────────────────────
@@ -823,3 +904,39 @@ completion (rather than reserving it indefinitely) allows other agents to pass
 through the cell after the task is marked complete.
 Unlimited locking was tested early in development and caused unnecessary
 detours that degraded throughput by up to 15\% in high-load configurations.
+
+\textbf{Energy-budget filtering as a first-class allocation constraint.}
+Filtering tasks that exceed an agent's remaining energy budget during bundle
+building adds one distance comparison per (agent, task) pair --- negligible
+computational cost --- but prevents a qualitatively important failure mode.
+Without the filter, an agent could win a bid on a task, trigger the charging
+threshold partway to the induct station, suspend execution, and leave the
+task re-queued and delayed.
+By excluding unaffordable tasks at bid time, LCBA ensures that every winning
+bid corresponds to a task the agent can physically complete in its current
+energy state.
+
+\textbf{Wait stations over in-place idling.}
+The simpler alternative --- leaving idle agents in place when no task is
+available --- produces unpredictable blockages.
+In high-load configurations, agents that complete a delivery at a popular
+eject station will hold position there, blocking subsequent deliveries to the
+same cell and forcing detours.
+Wait stations displace idle agents to pre-configured low-traffic positions,
+decoupling the delivery cell from the parking problem and reducing the
+expected path length of active agents by eliminating the most common
+sources of in-aisle obstruction.
+
+\textbf{Operational realism as an evaluation criterion.}
+Most academic MAPF benchmarks assume infinite-energy agents that can park
+anywhere in the grid.
+This thesis deliberately breaks both assumptions: agents have finite energy
+(requiring proactive charging), and idle agents are confined to designated
+wait stations (limiting congestion).
+The goal is not to claim that specific parameter values
+($E_{\max}$, $\alpha$, $|\mathcal{S}^{\text{wait}}|$) match any particular
+deployment, but to ensure that the qualitative constraint structure
+matches real systems --- so that algorithmic design choices (energy-budget
+filtering, charging-triggered reallocation, role-separated planners)
+are exercised under realistic operational pressure rather than evaluated
+in an artificially simplified setting.
