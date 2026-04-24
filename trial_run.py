@@ -49,7 +49,8 @@ metrics = orch.collect_batch_metrics(
     max_timesteps=3000,
     wall_time=0,
 )
-print(f'\nTasks completed : {metrics.tasks_completed}')
+print(f'\nTasks completed : {metrics.num_tasks_completed}')
+print(f'All completed   : {metrics.all_tasks_completed}')
 print(f'Makespan        : {metrics.makespan}')
 print(f'Collisions      : {metrics.collisions}')
 print(f'Deadlocks       : {metrics.num_deadlocks}')
