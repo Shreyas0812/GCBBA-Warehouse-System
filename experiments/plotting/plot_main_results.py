@@ -24,7 +24,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 ALG_ORDER = ["gcbba", "cbba", "dmchba", "sga"]
-ALG_LABELS = {"gcbba": "GCBBA", "cbba": "CBBA", "dmchba": "DMCHBA", "sga": "SGA"}
+ALG_LABELS = {"gcbba": "LCBA", "cbba": "CBBA", "dmchba": "DMCHBA", "sga": "SGA"}
 ALG_COLORS = {"gcbba": "#1f77b4", "cbba": "#ff7f0e", "dmchba": "#2ca02c", "sga": "#d62728"}
 
 METRICS = [
