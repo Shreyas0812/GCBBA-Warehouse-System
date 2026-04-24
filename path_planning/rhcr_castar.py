@@ -67,8 +67,11 @@ class RHCRCAStar(PathPlanner):
             is_fallback = path is None
             if is_fallback:
                 tqdm.write(f"[t={current_timestep}] Agent {agent_state.agent_id}: "
-                           f"RHCR found no charger path within window={self.window_size} — staying in place")
+                           f"RHCR found no charger path within window={self.window_size} — cancelling charge nav, will retry")
                 path = [start]
+                # Cancel charger navigation so _check_and_start_charging reassigns a reachable station next step
+                agent_state.is_navigating_to_charger = False
+                agent_state.charging_station_pos = None
             self._ca.reserve_path(path, agent_state.agent_id, start_time=current_timestep,
                                   set_goal_reservation=not is_fallback)
             result[agent_state.agent_id] = path[:self.replanning_period]  # execute only h steps
@@ -95,8 +98,12 @@ class RHCRCAStar(PathPlanner):
             is_fallback = path is None
             if is_fallback:
                 tqdm.write(f"[t={current_timestep}] Agent {agent_state.agent_id}: "
-                           f"RHCR found no wait path within window={self.window_size} — staying in place")
+                           f"RHCR found no wait path within window={self.window_size} — cancelling wait, will retry")
                 path = [start]
+                # Cancel wait state so _send_idle_agents_to_wait picks a reachable station next step
+                agent_state.is_navigating_to_wait = False
+                agent_state.wait_position = None
+                agent_state.is_idle_task = False
             self._ca.reserve_path(path, agent_state.agent_id, start_time=current_timestep,
                                   set_goal_reservation=not is_fallback)
             result[agent_state.agent_id] = path[:self.replanning_period]  # execute only h steps

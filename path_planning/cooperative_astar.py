@@ -263,9 +263,12 @@ class CooperativeAStar(PathPlanner):
             if is_fallback:
                 tqdm.write(
                     f"[t={current_timestep}] Agent {agent_state.agent_id}: "
-                    f"CA* found no charger path to {goal} within {max_plan_time} steps — staying in place"
+                    f"CA* found no charger path to {goal} within {max_plan_time} steps — cancelling charge nav, will retry"
                 )
                 path = [start]
+                # Cancel charger navigation so _check_and_start_charging reassigns a reachable station next step
+                agent_state.is_navigating_to_charger = False
+                agent_state.charging_station_pos = None
 
             self.reserve_path(path, agent_state.agent_id, start_time=current_timestep,
                               set_goal_reservation=not is_fallback)
@@ -300,9 +303,13 @@ class CooperativeAStar(PathPlanner):
             if is_fallback:
                 tqdm.write(
                     f"[t={current_timestep}] Agent {agent_state.agent_id}: "
-                    f"CA* found no wait path to {goal} within {max_plan_time} steps — staying in place"
+                    f"CA* found no wait path to {goal} within {max_plan_time} steps — cancelling wait, will retry"
                 )
                 path = [start]
+                # Cancel wait state so _send_idle_agents_to_wait picks a reachable station next step
+                agent_state.is_navigating_to_wait = False
+                agent_state.wait_position = None
+                agent_state.is_idle_task = False
 
             self.reserve_path(path, agent_state.agent_id, start_time=current_timestep,
                               set_goal_reservation=not is_fallback)
