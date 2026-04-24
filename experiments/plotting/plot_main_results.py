@@ -50,7 +50,7 @@ def load(csv_path: str, comm_ranges: list) -> pd.DataFrame:
     return df
 
 
-MIN_SEEDS = 3
+MIN_SEEDS = 2
 
 
 def mean_by_ar(df: pd.DataFrame, metric: str) -> pd.DataFrame:
