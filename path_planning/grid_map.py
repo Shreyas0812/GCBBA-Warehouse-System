@@ -38,7 +38,11 @@ class GridMap:
         charging_stations_flat = params.get('charging_stations', [])
         charging_stations = self.mark_charging_stations(charging_stations_flat)
 
-        all_stations = induct_stations + eject_stations + charging_stations
+        # Idle-task stations are parking targets only (not a new grid cell type).
+        idle_task_stations_flat = params.get('idle_task_stations', [])
+        idle_task_stations = self.read_idle_task_stations(idle_task_stations_flat)
+
+        all_stations = induct_stations + eject_stations + charging_stations + idle_task_stations
         self.bfs_distances_from_station = self.precompute_bfs_distances(all_stations)
 
         total_cells = self.width * self.height * self.depth
@@ -130,6 +134,24 @@ class GridMap:
                 self.grid[z, y, x] = 4  # Mark as charging station
                 charging_stations.append((x, y, z))
         return charging_stations
+
+    def read_idle_task_stations(self, idle_task_stations_flat):
+        """
+        Parse idle-task station coordinates for distance precomputation.
+        These are treated as regular free cells in the occupancy grid.
+
+        :param idle_task_stations_flat: [x, y, z, station_id, ...]
+        :return: list of (x, y, z) tuples that are in bounds and traversable
+        """
+        num_stations = len(idle_task_stations_flat) // 4
+        idle_task_stations = []
+        for i in range(num_stations):
+            x = int(idle_task_stations_flat[i * 4 + 0] / self.resolution)
+            y = int(idle_task_stations_flat[i * 4 + 1] / self.resolution)
+            z = int(idle_task_stations_flat[i * 4 + 2] / self.resolution)
+            if self.is_valid_cell(x, y, z):
+                idle_task_stations.append((x, y, z))
+        return idle_task_stations
 
     def _in_bounds(self, x, y, z):
         return 0 <= x < self.width and 0 <= y < self.height and 0 <= z < self.depth

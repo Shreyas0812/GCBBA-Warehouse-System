@@ -29,6 +29,14 @@ from helper.map_utils import calculate_average_service_time
 from Metrics import RunMetrics
 from run_single_experiment import run_single_steady_state_experiment, run_single_batch_experiment
 
+# ── Fixed path-planner config for all experiments ─────────────────────────────
+# CA* handles charger/idle phases (full-horizon, fast); RHCR handles task phases
+# (rolling horizon for conflict resolution). All share one reservation table.
+CHARGER_PLANNER = "ca_star"
+IDLE_PLANNER    = "ca_star"
+TASK_PLANNER    = "rhcr"
+# ──────────────────────────────────────────────────────────────────────────────
+
 def get_experiment_configs(
     mode: str = 'full',
     config:str = 'all',
@@ -130,6 +138,9 @@ def get_experiment_configs(
                 "seeds": seeds,
                 "path_planner": path_planner,
                 "rhcr_replanning_period": rhcr_replanning_period,
+                "charger_planner": CHARGER_PLANNER,
+                "idle_planner": IDLE_PLANNER,
+                "task_planner": TASK_PLANNER,
             })
 
     if config in ("all", "batch_only"):
@@ -151,6 +162,9 @@ def get_experiment_configs(
                 "seeds": seeds,
                 "path_planner": path_planner,
                 "rhcr_replanning_period": rhcr_replanning_period,
+                "charger_planner": CHARGER_PLANNER,
+                "idle_planner": IDLE_PLANNER,
+                "task_planner": TASK_PLANNER,
             })
 
     return configs
@@ -213,6 +227,9 @@ def _run_task(task: Dict):
             max_plan_time=task["max_plan_time"],
             path_planner=task["path_planner"],
             rhcr_replanning_period=task["rhcr_replanning_period"],
+            charger_planner=task["charger_planner"],
+            idle_planner=task["idle_planner"],
+            task_planner=task["task_planner"],
             output_dir=task["output_dir"],
         )
     else:
@@ -232,6 +249,9 @@ def _run_task(task: Dict):
             max_plan_time=task["max_plan_time"],
             path_planner=task["path_planner"],
             rhcr_replanning_period=task["rhcr_replanning_period"],
+            charger_planner=task["charger_planner"],
+            idle_planner=task["idle_planner"],
+            task_planner=task["task_planner"],
             output_dir=task["output_dir"],
         )
     return metrics, task["label"]
@@ -425,6 +445,9 @@ def main():
                 "max_plan_time": _map_plan_time,
                 "path_planner": cfg["path_planner"],
                 "rhcr_replanning_period": cfg["rhcr_replanning_period"],
+                "charger_planner": cfg["charger_planner"],
+                "idle_planner": cfg["idle_planner"],
+                "task_planner": cfg["task_planner"],
                 "output_dir": output_dir,
                 "label": (
                     f"{cfg['config_name']} seed={seed}"

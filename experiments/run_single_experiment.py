@@ -304,7 +304,9 @@ def run_single_steady_state_experiment(
     max_plan_time: int = 200,
     path_planner: str = "ca_star",
     rhcr_replanning_period: int = None,
-    output_dir: Optional[str] = None,
+    charger_planner: Optional[str] = None,
+    idle_planner: Optional[str] = None,
+    task_planner: Optional[str] = None,
 ) -> RunMetrics:
     np.random.seed(seed)
     random.seed(seed)
@@ -324,6 +326,9 @@ def run_single_steady_state_experiment(
         wall_clock_limit_s=wall_clock_limit_s,
         path_planner=path_planner,
         rhcr_replanning_period=rhcr_replanning_period,
+        charger_planner=charger_planner,
+        idle_planner=idle_planner,
+        task_planner=task_planner,
     )
 
     t0 = time.perf_counter()
@@ -372,6 +377,9 @@ def run_single_batch_experiment(
     max_plan_time: int = 200,
     path_planner: str = "ca_star",
     rhcr_replanning_period: int = None,
+    charger_planner: Optional[str] = None,
+    idle_planner: Optional[str] = None,
+    task_planner: Optional[str] = None,
     output_dir: Optional[str] = None,
 ) -> RunMetrics:
     np.random.seed(seed)
@@ -392,6 +400,9 @@ def run_single_batch_experiment(
         wall_clock_limit_s=wall_clock_limit_s,
         path_planner=path_planner,
         rhcr_replanning_period=rhcr_replanning_period,
+        charger_planner=charger_planner,
+        idle_planner=idle_planner,
+        task_planner=task_planner,
     )
 
     t0 = time.perf_counter()

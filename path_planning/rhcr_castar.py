@@ -18,7 +18,8 @@ class RHCRCAStar(PathPlanner):
     See rhcr_cbs.py (to be implemented) for the CBS variant.
     """
 
-    def __init__(self, grid_map, window_size: int = 20, replanning_period: int = None):
+    def __init__(self, grid_map, window_size: int = 20, replanning_period: int = None,
+                 shared_ca: "CooperativeAStar" = None):
         """
         Args:
             grid_map:           GridMap instance shared with the orchestrator.
@@ -30,13 +31,17 @@ class RHCRCAStar(PathPlanner):
                                 Must be <= window_size. Defaults to window_size (h = w),
                                 meaning agents replan only when the window is exhausted.
                                 Set h < w to replan more frequently (e.g. h=5, w=20).
+            shared_ca:          Optional CooperativeAStar instance whose reservation tables
+                                should be reused.  Pass this when using multi-planner mode
+                                so all phase planners share a single reservation table and
+                                correctly route around each other.
         """
         if replanning_period is not None and replanning_period > window_size:
             raise ValueError(f"replanning_period ({replanning_period}) must be <= window_size ({window_size})")
         self.grid_map          = grid_map
         self.window_size       = window_size
         self.replanning_period = replanning_period if replanning_period is not None else window_size
-        self._ca               = CooperativeAStar(grid_map)
+        self._ca               = shared_ca if shared_ca is not None else CooperativeAStar(grid_map)
 
     def hold_position(self, position: tuple, agent_id: int, current_timestep: int) -> None:
         """Delegate to CA*'s reservation table — no RHCR-specific logic needed."""
@@ -59,11 +64,13 @@ class RHCRCAStar(PathPlanner):
                 max_time=max_time, start_time=current_timestep,
                 require_goal=False,
             )
-            if path is None:
+            is_fallback = path is None
+            if is_fallback:
                 tqdm.write(f"[t={current_timestep}] Agent {agent_state.agent_id}: "
                            f"RHCR found no charger path within window={self.window_size} — staying in place")
                 path = [start]
-            self._ca.reserve_path(path, agent_state.agent_id, start_time=current_timestep)
+            self._ca.reserve_path(path, agent_state.agent_id, start_time=current_timestep,
+                                  set_goal_reservation=not is_fallback)
             result[agent_state.agent_id] = path[:self.replanning_period]  # execute only h steps
         return result
 
@@ -85,11 +92,13 @@ class RHCRCAStar(PathPlanner):
                 max_time=max_time, start_time=current_timestep,
                 require_goal=False,
             )
-            if path is None:
+            is_fallback = path is None
+            if is_fallback:
                 tqdm.write(f"[t={current_timestep}] Agent {agent_state.agent_id}: "
                            f"RHCR found no wait path within window={self.window_size} — staying in place")
                 path = [start]
-            self._ca.reserve_path(path, agent_state.agent_id, start_time=current_timestep)
+            self._ca.reserve_path(path, agent_state.agent_id, start_time=current_timestep,
+                                  set_goal_reservation=not is_fallback)
             result[agent_state.agent_id] = path[:self.replanning_period]  # execute only h steps
         return result
 
@@ -110,10 +119,12 @@ class RHCRCAStar(PathPlanner):
                 max_time=max_time, start_time=current_timestep,
                 require_goal=False,
             )
-            if path is None:
+            is_fallback = path is None
+            if is_fallback:
                 tqdm.write(f"[t={current_timestep}] Agent {agent_state.agent_id}: "
                            f"RHCR found no path within window={self.window_size} — staying in place")
                 path = [start]
-            self._ca.reserve_path(path, agent_state.agent_id, start_time=current_timestep)
+            self._ca.reserve_path(path, agent_state.agent_id, start_time=current_timestep,
+                                  set_goal_reservation=not is_fallback)
             result[agent_state.agent_id] = path[:self.replanning_period]  # execute only h steps
         return result

@@ -87,19 +87,23 @@ class CooperativeAStar(PathPlanner):
             return True
         return False
     
-    def reserve_path(self, path, agent_id, start_time=0):
+    def reserve_path(self, path, agent_id, start_time=0, set_goal_reservation=True):
         """
         Reserves the path for the agent.
-        
+
         :param path: List of positions [(x1, y1, z1), (x2, y2, z2), ...]
         :param agent_id: ID of the agent
+        :param set_goal_reservation: If True (default), mark the final cell as permanently
+            reserved so later agents route around it.  Pass False when the path is a
+            fallback stay-in-place (planning failed) so the agent's current cell is NOT
+            locked forever, allowing other agents to still route through it.
         """
         for t, pos in enumerate(path):
             key = (*pos, t + start_time)
             self.reservations[key] = agent_id
 
-        # Reserve goal position for all future timesteps 
-        if path:
+        # Reserve goal position for all future timesteps
+        if path and set_goal_reservation:
             goal_pos = path[-1]
             self.goal_reservations[goal_pos] = (agent_id, start_time + len(path))
             # for future_t in range(len(path) + start_time, len(path) + start_time + 1000): # Arbitrary large number to reserve goal
@@ -230,7 +234,8 @@ class CooperativeAStar(PathPlanner):
     def hold_position(self, position: tuple, agent_id: int, current_timestep: int) -> None:
         """Reserve an agent's current position without planning a new path."""
         self.clear_agent_reservations(agent_id)
-        self.reserve_path([position], agent_id, start_time=current_timestep)
+        # No goal_reservation — idle agents are not permanently occupying a goal cell.
+        self.reserve_path([position], agent_id, start_time=current_timestep, set_goal_reservation=False)
 
     def _plan_charger_paths(self, agent_states: list, current_timestep: int, max_plan_time: int) -> dict:
         """Sequential CA* for agents navigating to a charger.
@@ -254,14 +259,16 @@ class CooperativeAStar(PathPlanner):
                 start_time=current_timestep,
             )
 
-            if path is None:
+            is_fallback = path is None
+            if is_fallback:
                 tqdm.write(
                     f"[t={current_timestep}] Agent {agent_state.agent_id}: "
                     f"CA* found no charger path to {goal} within {max_plan_time} steps — staying in place"
                 )
                 path = [start]
 
-            self.reserve_path(path, agent_state.agent_id, start_time=current_timestep)
+            self.reserve_path(path, agent_state.agent_id, start_time=current_timestep,
+                              set_goal_reservation=not is_fallback)
             result[agent_state.agent_id] = path
 
         return result
@@ -289,14 +296,16 @@ class CooperativeAStar(PathPlanner):
                 start_time=current_timestep,
             )
 
-            if path is None:
+            is_fallback = path is None
+            if is_fallback:
                 tqdm.write(
                     f"[t={current_timestep}] Agent {agent_state.agent_id}: "
                     f"CA* found no wait path to {goal} within {max_plan_time} steps — staying in place"
                 )
                 path = [start]
 
-            self.reserve_path(path, agent_state.agent_id, start_time=current_timestep)
+            self.reserve_path(path, agent_state.agent_id, start_time=current_timestep,
+                              set_goal_reservation=not is_fallback)
             result[agent_state.agent_id] = path
 
         return result
@@ -323,14 +332,16 @@ class CooperativeAStar(PathPlanner):
                 start_time=current_timestep,
             )
 
-            if path is None:
+            is_fallback = path is None
+            if is_fallback:
                 tqdm.write(
                     f"[t={current_timestep}] Agent {agent_state.agent_id}: "
                     f"CA* found no path to {goal} within {max_plan_time} steps — staying in place"
                 )
                 path = [start]
 
-            self.reserve_path(path, agent_state.agent_id, start_time=current_timestep)
+            self.reserve_path(path, agent_state.agent_id, start_time=current_timestep,
+                              set_goal_reservation=not is_fallback)
             result[agent_state.agent_id] = path
 
         return result

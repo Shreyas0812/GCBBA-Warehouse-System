@@ -69,9 +69,12 @@ class IntegrationOrchestrator:
                  path_planner: str = "ca_star",          # "ca_star", "rhcr", or "pbs"
                  rhcr_replanning_period: int = None,    # h parameter; defaults to window_size (h=w)
                  allocation_timeout_s: Optional[float] = None,  # max seconds per allocation call; None = unlimited
-                 idle_charge_after: int = 15,
+                 idle_charge_after: int = 30,
                  no_path_replan_limit: int = 40,
                  stuck_task_release_after: int = 120,
+                 charger_planner: Optional[str] = None,  # "ca_star", "rhcr", or "pbs" for charger paths; None=use path_planner
+                 idle_planner: Optional[str] = None,     # "ca_star", "rhcr", or "pbs" for idle paths; None=use path_planner
+                 task_planner: Optional[str] = None,     # "ca_star", "rhcr", or "pbs" for task paths; None=use path_planner
                  ) -> None:
 
         if allocation_method not in {"gcbba", "sga", "cbba", "dmchba"}:
@@ -103,6 +106,40 @@ class IntegrationOrchestrator:
             self.path_planner = RHCRCAStar(self.grid_map, replanning_period=rhcr_replanning_period)
         else:
             self.path_planner = _planners[path_planner](self.grid_map)
+
+        # Initialize phase-specific planners if provided; otherwise all phases use self.path_planner
+        self.planner_map = None  # Will be set below if any phase-specific planner is specified
+        if charger_planner or idle_planner or task_planner:
+            # Extract the shared CA* reservation table from the default planner so all phase
+            # planners write to the same table (Phase 2 routes around Phase 1, etc.)
+            shared_ca = (
+                self.path_planner._ca         # RHCRCAStar wraps a CooperativeAStar
+                if isinstance(self.path_planner, RHCRCAStar)
+                else self.path_planner        # CooperativeAStar IS the table
+            )
+
+            # At least one phase-specific planner was specified; create a map
+            # Default each phase to path_planner if not explicitly overridden
+            def _create_planner(planner_name: Optional[str]) -> object:
+                if planner_name is None:
+                    return self.path_planner
+                if planner_name not in _planners:
+                    raise ValueError(f"Invalid phase planner: {planner_name!r}. Must be one of {list(_planners)}")
+                if planner_name == "rhcr":
+                    return RHCRCAStar(self.grid_map, replanning_period=rhcr_replanning_period,
+                                     shared_ca=shared_ca)
+                else:
+                    new_ca = _planners[planner_name](self.grid_map)
+                    # Share the reservation dicts so all planners see each other's reservations
+                    new_ca.reservations      = shared_ca.reservations
+                    new_ca.goal_reservations = shared_ca.goal_reservations
+                    return new_ca
+
+            self.planner_map = {
+                "charger": _create_planner(charger_planner),
+                "idle":    _create_planner(idle_planner),
+                "task":    _create_planner(task_planner),
+            }
 
         (
             agent_positions,
@@ -682,7 +719,11 @@ class IntegrationOrchestrator:
 
             if goal is None:
                 # Idle agent: hold current position so others plan around it.
-                self.path_planner.hold_position(
+                # In multi-planner mode use the task planner's table (the one task agents read).
+                hold_planner = (
+                    self.planner_map["task"] if self.planner_map else self.path_planner
+                )
+                hold_planner.hold_position(
                     agent_state.get_position(), agent_state.agent_id, self.current_timestep
                 )
                 agent_state.needs_new_path = False
@@ -750,7 +791,12 @@ class IntegrationOrchestrator:
         if not planning_agents:
             return
 
-        paths = self.path_planner.plan_all(planning_agents, self.current_timestep, self.max_plan_time)
+        paths = self.path_planner.plan_all(
+            planning_agents,
+            self.current_timestep,
+            self.max_plan_time,
+            planner_map=self.planner_map
+        )
         for agent_state in planning_agents:
             agent_state.assign_path(paths[agent_state.agent_id])
 

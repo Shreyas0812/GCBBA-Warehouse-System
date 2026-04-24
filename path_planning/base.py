@@ -14,6 +14,7 @@ class PathPlanner(ABC):
         agent_states: list,
         current_timestep: int,
         max_plan_time: int,
+        planner_map: dict = None,
     ) -> dict:
         """Concrete three-phase entry point. Do not override in subclasses.
 
@@ -25,6 +26,14 @@ class PathPlanner(ABC):
         Phase 2: wait-station agents plan and reserve their paths.
         Phase 3: task agents plan around the reserved charger and wait paths.
 
+        Args:
+            agent_states: List of AgentState objects needing paths.
+            current_timestep: Current simulation timestep.
+            max_plan_time: Maximum planning horizon.
+            planner_map: Optional dict mapping phase names to PathPlanner instances.
+                Keys: "charger", "idle", "task". If None, uses self for all phases.
+                Example: {"charger": ca_star, "idle": ca_star, "task": rhcr}
+
         Returns:
             dict mapping agent_id -> path (list of (x,y,z) tuples).
         """
@@ -32,9 +41,14 @@ class PathPlanner(ABC):
         wait_agents    = [a for a in agent_states if a.is_navigating_to_wait]
         task_agents    = [a for a in agent_states if not a.is_navigating_to_charger and not a.is_navigating_to_wait]
 
-        paths = self._plan_charger_paths(charger_agents, current_timestep, max_plan_time)
-        paths.update(self._plan_idle_paths(wait_agents, current_timestep, max_plan_time))
-        paths.update(self._plan_task_paths(task_agents, current_timestep, max_plan_time))
+        # Use provided planners or fall back to self (default: single-planner mode)
+        charger_planner = planner_map["charger"] if planner_map else self
+        idle_planner    = planner_map["idle"] if planner_map else self
+        task_planner    = planner_map["task"] if planner_map else self
+
+        paths = charger_planner._plan_charger_paths(charger_agents, current_timestep, max_plan_time)
+        paths.update(idle_planner._plan_idle_paths(wait_agents, current_timestep, max_plan_time))
+        paths.update(task_planner._plan_task_paths(task_agents, current_timestep, max_plan_time))
         return paths
 
     @abstractmethod
