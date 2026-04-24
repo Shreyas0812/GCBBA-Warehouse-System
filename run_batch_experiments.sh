@@ -2,25 +2,22 @@
 # run_batch_experiments.sh — Batch-mode thesis experiments across all environments.
 #
 # Execution order:
-#   Group 1 (small maps):  warehouse_small → crossdock → kiva  (ca_star, then rhcr)
-#   Group 2 (large maps):  warehouse_large → kiva_large → shelf_aisle  (ca_star, then rhcr)
+#   All maps are run once in full mode using the fixed planner setup:
+#   CA* for charger/idle phases, RHCR for task phases.
 #   Group 2 only starts after Group 1 fully completes.
 #
 # Usage:
 #   bash run_batch_experiments.sh                  # full thesis run
-#   bash run_batch_experiments.sh --mode quick     # smoke test only
 #   bash run_batch_experiments.sh --workers 8      # override worker count (default: all cores)
 
 set -euo pipefail
 
 # ── Defaults ────────────────────────────────────────────────────────────────
-MODE="full"
 WORKERS=12
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --mode)    MODE="$2";    shift 2 ;;
         --workers) WORKERS="$2"; shift 2 ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
@@ -52,15 +49,14 @@ run_exp() {
     local label="$4"
     echo ""
     echo "============================================================"
-    echo "  MAP: $map | config: $config | planner: $planner | mode: $MODE"
+    echo "  MAP: $map | config: $config | fixed planner setup"
     echo "  $label"
     echo "============================================================"
     python experiments/run_experiments.py \
         --map        "$map" \
-        --mode       "$MODE" \
+        --mode       full \
         --config     "$config" \
         --workers    "$WORKERS" \
-        --path-planner "$planner"
 }
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -68,21 +64,12 @@ run_exp() {
 # ════════════════════════════════════════════════════════════════════════════
 echo ""
 echo "████████████████████████████████████████████████████████████████████"
-echo "  GROUP 1 — Small maps — ca_star"
+echo "  GROUP 1 — Small maps"
 echo "████████████████████████████████████████████████████████████████████"
 
-run_exp gridworld_warehouse_small  batch_only  ca_star  "N=6  — GCBBA + CBBA + SGA + DMCHBA"
-run_exp gridworld_crossdock        batch_only  ca_star  "N=50 — GCBBA + CBBA + SGA + DMCHBA"
-run_exp gridworld_kiva             batch_only  ca_star  "N=100 — GCBBA + CBBA + SGA + DMCHBA"
-
-echo ""
-echo "████████████████████████████████████████████████████████████████████"
-echo "  GROUP 1 — Small maps — rhcr"
-echo "████████████████████████████████████████████████████████████████████"
-
-run_exp gridworld_warehouse_small  batch_only  rhcr  "N=6  — GCBBA + CBBA + SGA + DMCHBA"
-run_exp gridworld_crossdock        batch_only  rhcr  "N=50 — GCBBA + CBBA + SGA + DMCHBA"
-run_exp gridworld_kiva             batch_only  rhcr  "N=100 — GCBBA + CBBA + SGA + DMCHBA"
+run_exp gridworld_warehouse_small  batch_only  fixed  "N=6   — GCBBA + CBBA + SGA + DMCHBA"
+run_exp gridworld_crossdock        batch_only  fixed  "N=50  — GCBBA + CBBA + SGA + DMCHBA"
+run_exp gridworld_kiva             batch_only  fixed  "N=100 — GCBBA + CBBA + SGA + DMCHBA"
 
 echo ""
 echo "============================================================"
@@ -94,21 +81,12 @@ echo "============================================================"
 # ════════════════════════════════════════════════════════════════════════════
 echo ""
 echo "████████████████████████████████████████████████████████████████████"
-echo "  GROUP 2 — Large maps — ca_star"
+echo "  GROUP 2 — Large maps"
 echo "████████████████████████████████████████████████████████████████████"
 
-run_exp gridworld_warehouse_large  batch_only  ca_star  "N=18  — GCBBA + CBBA + SGA + DMCHBA"
-run_exp gridworld_kiva_large       batch_only  ca_star  "N=200 — GCBBA + DMCHBA"
-run_exp gridworld_shelf_aisle      batch_only  ca_star  "N=470 — GCBBA + DMCHBA"
-
-echo ""
-echo "████████████████████████████████████████████████████████████████████"
-echo "  GROUP 2 — Large maps — rhcr"
-echo "████████████████████████████████████████████████████████████████████"
-
-run_exp gridworld_warehouse_large  batch_only  rhcr  "N=18  — GCBBA + CBBA + SGA + DMCHBA"
-run_exp gridworld_kiva_large       batch_only  rhcr  "N=200 — GCBBA + DMCHBA"
-run_exp gridworld_shelf_aisle      batch_only  rhcr  "N=470 — GCBBA + DMCHBA"
+run_exp gridworld_warehouse_large  batch_only  fixed  "N=18  — GCBBA + CBBA + SGA + DMCHBA"
+run_exp gridworld_kiva_large       batch_only  fixed  "N=200 — GCBBA + DMCHBA"
+run_exp gridworld_shelf_aisle      batch_only  fixed  "N=470 — GCBBA + DMCHBA"
 
 echo ""
 echo "============================================================"
