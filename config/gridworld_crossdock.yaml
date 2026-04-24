@@ -94,9 +94,9 @@ create_gridworld_node:
     ]
 
     energy:
-      max_energy: 300
+      max_energy: 1150                 # Maximum battery capacity (grid steps); tuned for ~10 tasks per charge cycle
       charge_duration: 20
-      charge_rate: 1
+      charge_speed: 1                  # Charge-remaining decrements per timestep; higher = shorter docking time (charge_duration / charge_speed = timesteps at charger)
       charging_trigger_multiplier: 5.0
 
     # Charging stations in top-right maintenance bay (2x4 grid of cells)

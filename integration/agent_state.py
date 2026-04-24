@@ -38,7 +38,7 @@ class AgentState:
      - Provides methods to update execution state and retrieve current task info
     """
 
-    def __init__(self, agent_id: int, initial_position: Tuple[int, int, int], speed: float = 1.0, max_energy: int = 100, charge_rate: int = 1, no_current_task_threshold: int = 15):
+    def __init__(self, agent_id: int, initial_position: Tuple[int, int, int], speed: float = 1.0, max_energy: int = 100, charge_speed: int = 1, no_current_task_threshold: int = 15):
         self.agent_id = agent_id
         self.pos = np.array(initial_position, dtype=np.int32)
         self.initial_position: Tuple[int, int, int] = tuple(int(v) for v in initial_position)
@@ -66,7 +66,7 @@ class AgentState:
         # energy management
         self.max_energy: int = max_energy
         self.energy: int = max_energy
-        self.charge_rate: int = charge_rate
+        self.charge_speed: int = charge_speed
         self.is_navigating_to_charger: bool = False
         self.is_charging: bool = False
         self.charge_remaining: int = 0 # timesteps remaining to finish charging when at a charging station
@@ -246,7 +246,7 @@ class AgentState:
         
         # Charging 
         if self.is_charging:
-            charging_complete = self.step_charging(charge_per_timestep=self.charge_rate)
+            charging_complete = self.step_charging(charge_per_timestep=self.charge_speed)
             self.position_history.append((self.pos[0], self.pos[1], self.pos[2], timestep))
             if charging_complete:
                 self.is_idle = True

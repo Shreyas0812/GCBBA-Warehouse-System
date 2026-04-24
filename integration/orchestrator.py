@@ -151,7 +151,7 @@ class IntegrationOrchestrator:
         ) = self._load_config(config_path)
         self.max_energy                  = energy_config['max_energy']
         self.charge_duration             = energy_config['charge_duration']
-        self.charge_rate                 = energy_config['charge_rate']
+        self.charge_speed                 = energy_config['charge_speed']
         self.charging_trigger_multiplier = energy_config['charging_trigger_multiplier']
         self._validate_energy_config(agent_positions, charging_positions)
 
@@ -277,7 +277,7 @@ class IntegrationOrchestrator:
         energy_config = {
             'max_energy':                  int(energy_params.get('max_energy', 100)),
             'charge_duration':             int(energy_params.get('charge_duration', 20)),
-            'charge_rate':                 int(energy_params.get('charge_rate', 1)),
+            'charge_speed':                 int(energy_params.get('charge_speed', 1)),
             'charging_trigger_multiplier': float(energy_params.get('charging_trigger_multiplier', 2.0)),
         }
 
@@ -345,7 +345,7 @@ class IntegrationOrchestrator:
         for gcbba_agent in self.gcbba_orchestrator_initial.agents:
             grid_pos = self.grid_map.continuous_to_grid(float(gcbba_agent.pos[0]), float(gcbba_agent.pos[1]), float(gcbba_agent.pos[2]))
             self.agent_states.append(AgentState(agent_id=gcbba_agent.agent_id, initial_position=grid_pos, speed=gcbba_agent.speed,
-                                                 max_energy=self.max_energy, charge_rate=self.charge_rate,
+                                                 max_energy=self.max_energy, charge_speed=self.charge_speed,
                                                  no_current_task_threshold=self.idle_wait_after))
 
     def _inject_new_tasks(self) -> List[int]:
