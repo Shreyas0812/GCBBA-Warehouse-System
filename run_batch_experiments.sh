@@ -47,16 +47,22 @@ run_exp() {
     local config="$2"
     local planner="$3"
     local label="$4"
+    local methods="${5:-}"   # optional: space-separated method names (e.g. "gcbba dmchba")
     echo ""
     echo "============================================================"
     echo "  MAP: $map | config: $config | fixed planner setup"
     echo "  $label"
     echo "============================================================"
+    local methods_args=()
+    if [[ -n "$methods" ]]; then
+        methods_args=(--methods $methods)
+    fi
     python experiments/run_experiments.py \
         --map        "$map" \
         --mode       full \
         --config     "$config" \
         --workers    "$WORKERS" \
+        "${methods_args[@]}"
 }
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -85,8 +91,8 @@ echo "  GROUP 2 — Large maps"
 echo "████████████████████████████████████████████████████████████████████"
 
 run_exp gridworld_warehouse_large  batch_only  fixed  "N=18  — GCBBA + CBBA + SGA + DMCHBA"
-run_exp gridworld_kiva_large       batch_only  fixed  "N=200 — GCBBA + DMCHBA"
-run_exp gridworld_shelf_aisle      batch_only  fixed  "N=470 — GCBBA + DMCHBA"
+run_exp gridworld_kiva_large       batch_only  fixed  "N=200 — GCBBA + DMCHBA"  "gcbba dmchba"
+run_exp gridworld_shelf_aisle      batch_only  fixed  "N=470 — GCBBA + DMCHBA"  "gcbba dmchba"
 
 echo ""
 echo "============================================================"

@@ -2,8 +2,8 @@
 Experiment Runner:
 
 Usage:
-  python run_experiments.py --mode quick    # ~8 runs, verify pipeline
-  python run_experiments.py --mode full     # ~324 runs, thesis data (SS: 216, Batch: 108)
+  python run_experiments.py --mode quick    # ~16 runs, verify pipeline
+  python run_experiments.py --mode full     # ~480 runs/map, thesis data (SS: 320, Batch: 160)
 """
 
 import argparse
@@ -47,6 +47,7 @@ def get_experiment_configs(
     map_path: str = None,
     path_planner: str = "ca_star",
     rhcr_replanning_period: int = None,
+    methods: List[str] = None,
 ) -> List[Dict]:
     """
     Builds list of experiment configurations to run based on the selected mode and map parameters. 
@@ -97,13 +98,13 @@ def get_experiment_configs(
         batch_fracs = [0.2, 0.5]  # 20% of batch capacity and full batch capacity
 
     else:  # full
-        seeds = [42, 123, 456]
-        # 6 points spanning near-disconnected to full-connectivity
-        range_fracs = [0.05, 0.1, 0.2, 0.35, 0.6, 1.2]
-        # 10 points from 25% to 300% of ss capacity
-        ss_capacity_fracs = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0]
+        seeds = [42, 123]
+        # 5 points spanning near-disconnected to full-connectivity
+        range_fracs = [0.1, 0.2, 0.35, 0.6, 1.2]
+        # 8 points from 50% to 225% of ss capacity
+        ss_capacity_fracs = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25]
         
-        batch_fracs = [0.05, 0.1, 0.2, 0.4, 0.7, 1.0]
+        batch_fracs = [0.2, 0.4, 0.7, 1.0]
 
     comm_ranges = sorted(set(
         max(3, round(f * diagonal)) for f in range_fracs
@@ -117,7 +118,7 @@ def get_experiment_configs(
         max(num_agents, round(f * _batch_capacity)) for f in batch_fracs
     ))
 
-    METHODS = ["gcbba", "cbba", "sga", "dmchba"]
+    METHODS = methods if methods else ["gcbba", "cbba", "sga", "dmchba"]
 
     if config in ("all", "ss_only"):
         for method, ar, cr in itertools.product(METHODS, ss_arrival_rates, comm_ranges):
@@ -361,6 +362,14 @@ def main():
         help="RHCR replanning period h (default: window_size)",
     )
 
+    parser.add_argument(
+        "--methods",
+        nargs="+",
+        choices=["gcbba", "cbba", "sga", "dmchba"],
+        default=None,
+        help="Allocation methods to run (default: all four). E.g. --methods gcbba dmchba",
+    )
+
     args = parser.parse_args()
 
     map_name = args.map.replace(".yaml", "")
@@ -393,6 +402,7 @@ def main():
         map_path=map_path,
         path_planner=args.path_planner,
         rhcr_replanning_period=args.rhcr_replanning_period,
+        methods=args.methods,
         )
 
     num_workers = args.workers if args.workers > 0 else os.cpu_count()
