@@ -35,8 +35,9 @@ create_gridworld_node:
       0,  0, 0,  1, 27, 0,       # Left border
       42, 0, 0, 43, 27, 0,       # Right border
 
-      # Maintenance / charging bay (top-right corner, accessible from x=37 or y=21)
-      38, 22, 0, 41, 25, 0,      # Maintenance bay area (extended to y=22-25)
+      # Maintenance / charging bay (top-right corner, accessible from x=37 or y=23)
+      # Trimmed to y=24-25 so that eject station (40,23,0) remains accessible
+      38, 24, 0, 41, 25, 0,      # Maintenance bay area
 
       # Sorting-lane dividers: partial horizontal barriers separating 6 transfer lanes
       # Lanes centered at y=3, 7, 11, 15, 19, 23
@@ -113,15 +114,15 @@ create_gridworld_node:
     ]
 
     # Idle-task stations for idle fallback (non-charging parking)
+    # Placed at x=3,4 per lane y-level — clear of all obstacles, induct stations (x=2),
+    # charging stations (x=38,39), dividers, and agent starts (x=9,32)
     idle_task_stations: [
-      38, 22, 0, 1,
-      39, 22, 0, 2,
-      38, 23, 0, 3,
-      39, 23, 0, 4,
-      38, 24, 0, 5,
-      39, 24, 0, 6,
-      38, 25, 0, 7,
-      39, 25, 0, 8
+      3,  3, 0,  1,   4,  3, 0,  2,
+      3,  7, 0,  3,   4,  7, 0,  4,
+      3, 11, 0,  5,   4, 11, 0,  6,
+      3, 15, 0,  7,   4, 15, 0,  8,
+      3, 19, 0,  9,   4, 19, 0, 10,
+      3, 23, 0, 11,   4, 23, 0, 12
     ]
 
     visualization:

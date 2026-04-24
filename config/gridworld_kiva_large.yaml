@@ -152,19 +152,14 @@ create_gridworld_node:
     ]
 
     # Idle-task stations for idle fallback (non-charging parking)
+    # Placed at x=5,7 per induct-dock y-level — clear of all obstacles, induct stations (x=4),
+    # charging stations (x=64), and agent starts (x=3 at pod-row levels, x=6 at all levels)
     idle_task_stations: [
-      64, 12, 0,  1,
-      64, 16, 0,  2,
-      64, 20, 0,  3,
-      64, 24, 0,  4,
-      64, 28, 0,  5,
-      64, 32, 0,  6,
-      64, 36, 0,  7,
-      64, 40, 0,  8,
-      64, 44, 0,  9,
-      64, 48, 0, 10,
-      64, 52, 0, 11,
-      64, 56, 0, 12
+      5, 12, 0,  1,   7, 12, 0,  2,
+      5, 24, 0,  3,   7, 24, 0,  4,
+      5, 36, 0,  5,   7, 36, 0,  6,
+      5, 48, 0,  7,   7, 48, 0,  8,
+      5, 60, 0,  9,   7, 60, 0, 10
     ]
 
     visualization:
