@@ -81,14 +81,20 @@ def plot(csv_path: str, arrival_rates: list, save: bool = False):
         for col_idx, (metric, ylabel, title) in enumerate(METRICS):
             ax  = axes[row_idx][col_idx]
             agg = mean_by_cr(ar_df, metric)
-            for alg in algorithms:
+            draw_order = [a for a in algorithms if a != "gcbba"] + (["gcbba"] if "gcbba" in algorithms else [])
+            for alg in draw_order:
                 subset = agg[agg["allocation_method"] == alg].sort_values("comm_range")
                 if subset.empty:
                     continue
+                is_lcba = alg == "gcbba"
                 ax.plot(subset["comm_range"], subset[metric],
-                        marker="o", markersize=5,
+                        marker="o", markersize=8 if is_lcba else 5,
                         label=ALG_LABELS.get(alg, alg),
-                        color=ALG_COLORS.get(alg))
+                        color=ALG_COLORS.get(alg),
+                        linewidth=2.8 if is_lcba else 2.1,
+                        markeredgecolor="black" if is_lcba else None,
+                        markeredgewidth=1.2 if is_lcba else 0.0,
+                        zorder=5 if is_lcba else 3)
 
             ax.set_xlabel("comm_range", fontsize=9)
             ax.set_ylabel(ylabel, fontsize=9)

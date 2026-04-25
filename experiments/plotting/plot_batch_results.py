@@ -19,7 +19,7 @@ Usage:
         python experiments/plotting/plot_batch_results.py --csv path/to/summary.csv
         python experiments/plotting/plot_batch_results.py --csv path/to/summary.csv --save
         python experiments/plotting/plot_batch_results.py --csv path/to/summary.csv --comm-range 25
-        python experiments/plotting/plot_batch_results.py --csv path/to/summary.csv --task-count 265
+    python experiments/plotting/plot_batch_results.py --csv path/to/summary.csv --task-count 160
         python experiments/plotting/plot_batch_results.py --csv path/to/summary.csv --include-wall-clock-timeouts
 """
 
@@ -37,7 +37,6 @@ ALG_COLORS = {"gcbba": "#1f77b4", "cbba": "#ff7f0e", "dmchba": "#2ca02c", "sga":
 ALG_MARKERS = {"gcbba": "o", "cbba": "s", "dmchba": "^", "sga": "D"}
 
 DEFAULT_COMM_RANGE = 51
-DEFAULT_TASK_COUNT = 151
 DEFAULT_MIN_SEEDS = 2
 
 
@@ -91,14 +90,20 @@ def mean_over_seeds(df: pd.DataFrame, groupby: list, metric: str, min_seeds: int
 
 
 def plot_line(ax, agg, x_col, metric, algorithms, xlabel, ylabel, title):
-    for alg in algorithms:
+    draw_order = [a for a in algorithms if a != "gcbba"] + (["gcbba"] if "gcbba" in algorithms else [])
+    for alg in draw_order:
         subset = agg[agg["allocation_method"] == alg].sort_values(x_col)
         if subset.empty:
             continue
+        is_lcba = alg == "gcbba"
         ax.plot(subset[x_col], subset[metric],
-                marker=ALG_MARKERS.get(alg, "o"), markersize=5,
+                marker=ALG_MARKERS.get(alg, "o"), markersize=8 if is_lcba else 5,
                 label=ALG_LABELS.get(alg, alg),
-                color=ALG_COLORS.get(alg))
+                color=ALG_COLORS.get(alg),
+                linewidth=2.8 if is_lcba else 2.1,
+                markeredgecolor="black" if is_lcba else None,
+                markeredgewidth=1.2 if is_lcba else 0.0,
+                zorder=5 if is_lcba else 3)
     ax.set_xlabel(xlabel, fontsize=9)
     ax.set_ylabel(ylabel, fontsize=9)
     ax.set_title(title, fontsize=10)
@@ -110,6 +115,18 @@ def _closest_numeric(requested, available_values):
     if not available_values:
         return requested
     return min(available_values, key=lambda v: abs(float(v) - float(requested)))
+
+
+def _default_task_count(available_values):
+    """Use a moderate-load default for comm-range slices.
+
+    We pick the second-smallest available batch task count when possible,
+    which aligns with the 20-tasks-per-induct configuration in quick/full modes.
+    """
+    if not available_values:
+        return None
+    vals = sorted(int(v) for v in available_values)
+    return vals[1] if len(vals) >= 2 else vals[0]
 
 
 def _fmt_num_for_name(v: float) -> str:
@@ -173,7 +190,10 @@ def plot(
     if comm_range not in available_crs:
         comm_range = _closest_numeric(comm_range, available_crs)
         print(f"Requested comm_range not found; using nearest value {comm_range}")
-    if task_count not in available_tcs:
+    if task_count is None:
+        task_count = _default_task_count(available_tcs)
+        print(f"No task_count provided; using default value {task_count}")
+    elif task_count not in available_tcs:
         task_count = int(_closest_numeric(task_count, available_tcs))
         print(f"Requested task_count not found; using nearest value {task_count}")
 
@@ -407,6 +427,14 @@ def run_sweeps(
             )
 
     if sweep_comm_ranges:
+        available_tcs = sorted(df_full["initial_tasks"].unique())
+        if task_count is None:
+            task_count = _default_task_count(available_tcs)
+            print(f"No task_count provided; using default value {task_count} for comm-range sweep")
+        elif task_count not in available_tcs:
+            task_count = int(_closest_numeric(task_count, available_tcs))
+            print(f"Requested task_count not found; using nearest value {task_count} for comm-range sweep")
+
         for cr in sorted(df_full["comm_range"].unique()):
             out_dir = os.path.join(output_root, "by_comm_range", f"cr_{_fmt_num_for_name(cr)}")
             print(f"Generating comm-range slice in {out_dir}")
@@ -436,8 +464,8 @@ if __name__ == "__main__":
                         help="Generate outputs for every comm range into by_comm_range/ folders")
     parser.add_argument("--comm-range", type=float, default=DEFAULT_COMM_RANGE,
                         help=f"Comm range for task-count plots (default: {DEFAULT_COMM_RANGE})")
-    parser.add_argument("--task-count", type=int,   default=DEFAULT_TASK_COUNT,
-                        help=f"Task count for comm-range plot (default: {DEFAULT_TASK_COUNT})")
+    parser.add_argument("--task-count", type=int, default=None,
+                        help="Task count for comm-range plot (default: auto-select from CSV)")
     parser.add_argument("--min-seeds", type=int, default=DEFAULT_MIN_SEEDS,
                         help=f"Minimum seeds required to show a point (default: {DEFAULT_MIN_SEEDS})")
     parser.add_argument("--include-wall-clock-timeouts", action="store_true",

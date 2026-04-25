@@ -88,14 +88,20 @@ def plot(csv_path: str, comm_ranges: list, save: bool = False):
             ar_per_alg = [set(agg[agg["allocation_method"] == a]["task_arrival_rate"]) for a in algorithms if not agg[agg["allocation_method"] == a].empty]
             shared_ars = set.intersection(*ar_per_alg) if ar_per_alg else set()
             agg = agg[agg["task_arrival_rate"].isin(shared_ars)]
-            for alg in algorithms:
+            draw_order = [a for a in algorithms if a != "gcbba"] + (["gcbba"] if "gcbba" in algorithms else [])
+            for alg in draw_order:
                 subset = agg[agg["allocation_method"] == alg].sort_values("task_arrival_rate")
                 if subset.empty:
                     continue
+                is_lcba = alg == "gcbba"
                 ax.plot(subset["task_arrival_rate"], subset[metric],
-                        marker="o", markersize=4,
+                        marker="o", markersize=7 if is_lcba else 4,
                         label=ALG_LABELS.get(alg, alg),
-                        color=ALG_COLORS.get(alg))
+                        color=ALG_COLORS.get(alg),
+                        linewidth=2.8 if is_lcba else 2.0,
+                        markeredgecolor="black" if is_lcba else None,
+                        markeredgewidth=1.2 if is_lcba else 0.0,
+                        zorder=5 if is_lcba else 3)
 
             ax.set_xlabel("task arrival rate (tasks/ts/station)", fontsize=8)
             ax.set_ylabel(ylabel, fontsize=8)
