@@ -2,8 +2,9 @@
 Experiment Runner:
 
 Usage:
-  python run_experiments.py --mode quick    # ~16 runs, verify pipeline
-  python run_experiments.py --mode full     # ~480 runs/map, thesis data (SS: 320, Batch: 160)
+    python run_experiments.py --mode quick    # quick verification run
+    python run_experiments.py --mode full     # reliability-first thesis run
+    python run_experiments.py --mode stress   # overload-focused stress run
 """
 
 import argparse
@@ -51,7 +52,8 @@ def get_experiment_configs(
 ) -> List[Dict]:
     """
     Builds list of experiment configurations to run based on the selected mode and map parameters. 
-     - mode: 'quick' to check functionality. otherwise, 'full' for comprehensive sweep (default).
+         - mode: 'quick' for sanity check, 'full' for reliability-first thesis sweep,
+             and 'stress' for overload-focused stress tests.
      - num_agents: number of agents in the map (used for scaling certain parameters).
      - num_induct: number of induct stations in the map (used for scaling certain parameters).
      - grid_w, grid_h: dimensions of the grid (used for scaling certain parameters).
@@ -88,20 +90,32 @@ def get_experiment_configs(
         seeds = [42]
         # One sparse range (35% diagonal) and one full-connectivity range
         range_fracs = [0.35, 1.2]
-        # Knee (1×) and a heavy-load point (2×) only
-        ss_capacity_fracs = [1.0, 2.0]
+        # Light and moderate load only
+        ss_capacity_fracs = [0.9, 1.1]
 
-        # Fixed workload in tasks per induct station for map-invariant comparison.
-        batch_tasks_per_induct = [10, 20]
+        # Fixed workload in tasks per induct station.
+        batch_tasks_per_induct = [10, 15]
 
-    else:  # full
+    elif mode == "full":
+        # Reliability-first thesis mode.
         seeds = [42, 123]
         # 5 points spanning near-disconnected to full-connectivity
         range_fracs = [0.1, 0.2, 0.35, 0.6, 1.2]
-        # 5 points from 50% to 150% of ss capacity
-        ss_capacity_fracs = [0.5, 0.75, 1.0, 1.25, 1.5]
+        # 5 points from 50% to 110% of ss capacity
+        ss_capacity_fracs = [0.5, 0.7, 0.85, 1.0, 1.1]
         
-        # Fixed workload in tasks per induct station for map-invariant comparison.
+        # Reliability-first workload ladder in tasks per induct station.
+        batch_tasks_per_induct = [8, 10, 12, 15]
+
+    else:  # stress
+        # Overload-focused stress mode.
+        seeds = [42, 123]
+        # 5 points spanning near-disconnected to full-connectivity
+        range_fracs = [0.1, 0.2, 0.35, 0.6, 1.2]
+        # 5 points from 75% to 175% of ss capacity
+        ss_capacity_fracs = [0.75, 1.0, 1.25, 1.5, 1.75]
+
+        # Stress workload ladder in tasks per induct station.
         batch_tasks_per_induct = [10, 20, 30, 40]
 
     comm_ranges = sorted(set(
@@ -321,8 +335,9 @@ def main():
 
     parser.add_argument(
         "--mode",
-        choices=["quick", "full"],
+        choices=["quick", "full", "stress"],
         default="full",
+        help="Sweep mode: quick (sanity), full (reliability-first), stress (overload-focused)",
     )
 
     parser.add_argument(
